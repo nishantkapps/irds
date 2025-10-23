@@ -1,0 +1,23 @@
+# Single gesture configuration - loads only 1 file for fastest startup
+data:
+  folder_path: "./data"
+  file_pattern: "*.txt"
+  has_header: false
+  add_metadata: true
+  max_files: 1  # Only load 1 file for fastest startup
+
+visualization:
+  max_rows: 300  # More frames for single gesture
+  interval_ms: 80
+  point_size: 30
+  show: true
+
+skeleton:
+  enabled: true
+  num_joints: 25
+  connect: true
+
+filters:
+  # Remove restrictive filters - let it use any available data
+  # gesture_label: "4"  # Only gesture 4 (Shoulder Abduction Left)
+  # position: "sit"      # Only sitting position

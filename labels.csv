@@ -1,0 +1,10 @@
+GestureIndex,GestureName,Description
+0,Elbow Flexion Left,Flexion and extension movement of the left elbow joint
+1,Elbow Flexion Right,Flexion and extension movement of the right elbow joint
+2,Shoulder Flexion Left,Flexion and extension movement of left shoulder while keeping the arm straight in front of the body
+3,Shoulder Flexion Right,Flexion and extension movement of right shoulder while keeping the arm straight in front of the body
+4,Shoulder Abduction Left,The left arm is raised away from the side of the body while keeping the arm straight
+5,Shoulder Abduction Right,The right arm is raised away from the side of the body while keeping the arm straight
+6,Shoulder Forward Elevation,"With hands clap together, the arms are kept straight and raised above the head, keeping the elbows straight"
+7,Side tap Left,The left leg is moved to the left side and back while keeping the balance
+8,Side tap Right,The right leg is moved to the right side and back while maintaining balance

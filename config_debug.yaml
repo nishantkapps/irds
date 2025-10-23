@@ -1,0 +1,21 @@
+# Debug configuration - minimal filters, shows available data
+data:
+  folder_path: "./data"
+  file_pattern: "*.txt"
+  has_header: false
+  add_metadata: true
+  max_files: 3  # Load only 3 files for debugging
+
+visualization:
+  max_rows: 100  # Few frames for quick testing
+  interval_ms: 200  # Slower animation to see what's happening
+  point_size: 30
+  show: true
+
+skeleton:
+  enabled: true
+  num_joints: 25
+  connect: true
+
+filters:
+  # No filters at all - show whatever data is available

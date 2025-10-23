@@ -1,0 +1,107 @@
+# CLIP Gesture Model Training Configuration
+# Use this file to experiment with different hyperparameters
+
+# Data Configuration
+data:
+  folder_path: "data"
+  max_files: 200                    # Number of files to load (more = better accuracy, slower)
+  sequence_length: 15               # Temporal sequence length (longer = better context)
+  test_size: 0.2                    # Train/test split ratio
+  random_state: 42                  # For reproducible results
+
+# Model Architecture
+model:
+  # Skeleton Encoder (LSTM + Attention)
+  skeleton_encoder:
+    hidden_dim: 256                  # LSTM hidden size
+    num_layers: 2                   # Number of LSTM layers
+    dropout: 0.2                    # Dropout rate
+    attention_heads: 8              # Number of attention heads
+    
+  # Text Encoder (for gesture descriptions)
+  text_encoder:
+    embedding_dim: 128               # Text embedding dimension
+    hidden_dim: 256                 # Text encoder hidden size
+    num_layers: 2                   # Number of layers
+    
+  # CLIP Model
+  clip_model:
+    embedding_dim: 256               # Final embedding dimension
+    logit_scale: 0.07               # Temperature scaling for contrastive loss
+
+# Training Configuration
+training:
+  # Basic Parameters
+  num_epochs: 100                   # Number of training epochs
+  batch_size: 16                    # Batch size (smaller = better learning, slower)
+  learning_rate: 0.0005            # Learning rate (lower = more stable)
+  
+  # Optimization
+  optimizer: "AdamW"                # Optimizer type (AdamW, Adam, SGD)
+  weight_decay: 0.01               # L2 regularization
+  beta1: 0.9                       # Adam beta1
+  beta2: 0.999                     # Adam beta2
+  eps: 1e-8                        # Adam epsilon
+  
+  # Learning Rate Scheduling
+  lr_scheduler: "CosineAnnealingLR" # Scheduler type
+  lr_warmup_epochs: 10             # Warmup epochs
+  lr_min: 0.00001                  # Minimum learning rate
+  
+  # Loss Configuration
+  contrastive_weight: 0.5          # Weight for contrastive loss
+  classification_weight: 0.5       # Weight for classification loss
+  temperature: 0.07                # Temperature for contrastive learning
+
+# Data Augmentation
+augmentation:
+  enabled: true                     # Enable data augmentation
+  noise_std: 0.01                  # Gaussian noise standard deviation
+  rotation_angle: 5                # Random rotation angle (degrees)
+  time_shift: 0.1                  # Time shift ratio
+  scale_factor: 0.1                # Random scaling factor
+
+# Regularization
+regularization:
+  dropout: 0.2                      # Dropout rate
+  weight_decay: 0.01               # L2 weight decay
+  gradient_clip: 1.0                # Gradient clipping threshold
+  early_stopping:
+    enabled: true                   # Enable early stopping
+    patience: 20                    # Epochs to wait before stopping
+    min_delta: 0.001               # Minimum improvement threshold
+
+# Evaluation
+evaluation:
+  metrics: ["accuracy", "f1", "precision", "recall"]
+  save_predictions: true            # Save predictions to file
+  confusion_matrix: true           # Generate confusion matrix
+  classification_report: true       # Generate classification report
+
+# Output Configuration
+output:
+  model_save_path: "clip_gesture_model.pth"
+  scaler_save_path: "clip_gesture_scaler.pkl"
+  info_save_path: "clip_gesture_info.json"
+  plots_save_path: "clip_training_curves.png"
+  confusion_matrix_path: "clip_confusion_matrix.png"
+  
+# Logging
+logging:
+  log_level: "INFO"                # Logging level
+  log_interval: 10                 # Log every N epochs
+  save_checkpoints: true           # Save model checkpoints
+  checkpoint_interval: 20         # Save checkpoint every N epochs
+
+# Hardware Configuration
+hardware:
+  device: "auto"                    # Device selection (auto, cuda, cpu)
+  num_workers: 4                   # DataLoader workers
+  pin_memory: true                 # Pin memory for faster GPU transfer
+  mixed_precision: false           # Use mixed precision training
+
+# Experiment Tracking
+experiment:
+  name: "clip_gesture_experiment"   # Experiment name
+  tags: ["clip", "gesture", "rocm"] # Experiment tags
+  notes: "CLIP gesture recognition with ROCm" # Experiment notes

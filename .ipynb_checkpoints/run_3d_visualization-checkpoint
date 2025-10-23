@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import importlib.util
+from typing import Optional, Tuple, List
+
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+IRDS_EDA_PATH = os.path.join(THIS_DIR, "irds-eda.py")
+
+
+def load_irds_module():
+    spec = importlib.util.spec_from_file_location("irds_eda", IRDS_EDA_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load module from {IRDS_EDA_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run 3D visualization for IRDS dataset")
+    parser.add_argument("--folder-path", default=os.path.join(THIS_DIR, "data"), help="Data folder path")
+    parser.add_argument("--file-pattern", default="*.txt", help="Glob pattern for data files")
+    parser.add_argument("--has-header", action="store_true", help="Set if data files contain a header row")
+    parser.add_argument("--no-metadata", action="store_true", help="Disable filename metadata parsing")
+    parser.add_argument("--columns", nargs="*", default=None, help="Explicit column names for data files (if no header)")
+    parser.add_argument("--x-cols", nargs=3, metavar=("X","Y","Z"), default=None, help="Names of x,y,z columns to plot")
+    parser.add_argument("--frame-col", default=None, help="Optional frame/time column name")
+    parser.add_argument("--max-rows", type=int, default=500, help="Maximum number of rows/frames to animate")
+    parser.add_argument("--interval-ms", type=int, default=100, help="Frame interval in milliseconds")
+    parser.add_argument("--point-size", type=int, default=20, help="Scatter point size")
+    parser.add_argument("--elev", type=int, default=20, help="3D elevation angle")
+    parser.add_argument("--azim", type=int, default=-60, help="3D azimuth angle")
+    parser.add_argument("--save-path", default=None, help="Optional output file (.gif or .mp4)")
+    parser.add_argument("--dpi", type=int, default=100, help="DPI for saved animation")
+    parser.add_argument("--no-show", action="store_true", help="Do not display the window (useful when saving)")
+    parser.add_argument("--skeleton", action="store_true", help="Interpret first columns as 25 (x,y,z) joints and plot all joints")
+    parser.add_argument("--num-joints", type=int, default=25, help="Number of joints when using --skeleton")
+    parser.add_argument("--start-col", type=int, default=0, help="Start index among numeric columns for first joint when using --skeleton")
+    parser.add_argument("--order", default="xyz", help="Axis order within each joint (permutation of xyz)")
+    parser.add_argument("--connect", action="store_true", help="Draw simple chain connections between consecutive joints in --skeleton mode")
+    # Filters
+    parser.add_argument("--source-file", default=None, help="Filter to a specific source filename (e.g., 307_18_4_4_1_sit.txt)")
+    parser.add_argument("--subject-id", default=None, help="Filter by subject_id metadata")
+    parser.add_argument("--date-id", default=None, help="Filter by date_id metadata")
+    parser.add_argument("--gesture-label", default=None, help="Filter by gesture_label metadata")
+    parser.add_argument("--rep-number", default=None, help="Filter by rep_number metadata")
+    parser.add_argument("--correct-label", default=None, help="Filter by correct_label metadata")
+    parser.add_argument("--position", default=None, help="Filter by position metadata")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    mod = load_irds_module()
+
+    # Prepare options
+    add_metadata = not args.no_metadata
+    x_cols: Optional[Tuple[str,str,str]] = tuple(args.x_cols) if args.x_cols is not None else None
+    columns: Optional[List[str]] = args.columns if args.columns else None
+
+    # Run visualization
+    mod.run_3d_visualization(
+        folder_path=args.folder_path,
+        file_pattern=args.file_pattern,
+        has_header=args.has_header,
+        add_metadata=add_metadata,
+        columns=columns,
+        x_cols=x_cols,
+        frame_col=args.frame_col,
+        max_rows=args.max_rows,
+        interval_ms=args.interval_ms,
+        point_size=args.point_size,
+        elev=args.elev,
+        azim=args.azim,
+        save_path=args.save_path,
+        dpi=args.dpi,
+        show=(not args.no_show),
+        skeleton=args.skeleton,
+        num_joints=args.num_joints,
+        start_col=args.start_col,
+        order=args.order,
+        connect=args.connect,
+        source_file=args.source_file,
+        subject_id=args.subject_id,
+        date_id=args.date_id,
+        gesture_label=args.gesture_label,
+        rep_number=args.rep_number,
+        correct_label=args.correct_label,
+        position=args.position,
+    )
+
+
+if __name__ == "__main__":
+    main()

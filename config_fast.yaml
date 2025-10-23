@@ -1,0 +1,22 @@
+# Fast startup configuration - loads only 5 files for quick testing
+data:
+  folder_path: "./data"
+  file_pattern: "*.txt"
+  has_header: false
+  add_metadata: true
+  max_files: 5  # Only load 5 files for fast startup
+
+visualization:
+  max_rows: 200  # Fewer frames for faster animation
+  interval_ms: 50  # Faster animation
+  point_size: 25
+  show: true
+
+skeleton:
+  enabled: true
+  num_joints: 25
+  connect: true
+
+filters:
+  # No filters - will show first 5 files
+  # All filters commented out for maximum compatibility
