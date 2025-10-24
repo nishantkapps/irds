@@ -1,0 +1,68 @@
+# Fast Training Configuration (Quick experiments)
+# Less data, fewer epochs, larger batch size
+
+data:
+  folder_path: "../data"
+  max_files: 50                     # Less data for faster training
+  sequence_length: 10               # Shorter sequences
+  test_size: 0.2
+  random_state: 42
+
+model:
+  skeleton_encoder:
+    hidden_dim: 128                 # Smaller model
+    num_layers: 2
+    dropout: 0.2
+    attention_heads: 4
+    
+  text_encoder:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    
+  clip_model:
+    embedding_dim: 128
+    logit_scale: 0.07
+
+training:
+  num_epochs: 30                    # Fewer epochs
+  batch_size: 32                    # Larger batch size
+  learning_rate: 0.001              # Higher learning rate
+  
+  optimizer: "Adam"
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+  
+  lr_scheduler: "StepLR"
+  lr_warmup_epochs: 5
+  lr_min: 0.0001
+  
+  contrastive_weight: 0.5
+  classification_weight: 0.5
+  temperature: 0.07
+
+augmentation:
+  enabled: false                    # No augmentation for speed
+
+regularization:
+  dropout: 0.2
+  weight_decay: 0.01
+  gradient_clip: 1.0
+  early_stopping:
+    enabled: true
+    patience: 10
+    min_delta: 0.001
+
+output:
+  model_save_path: "outputs/clip_gesture_model_fast.pth"
+  scaler_save_path: "outputs/clip_gesture_scaler_fast.pkl"
+  info_save_path: "outputs/clip_gesture_info_fast.json"
+  plots_save_path: "outputs/clip_training_curves_fast.png"
+  confusion_matrix_path: "outputs/clip_confusion_matrix_fast.png"
+
+experiment:
+  name: "clip_gesture_fast_training"
+  tags: ["clip", "gesture", "fast", "rocm"]
+  notes: "Fast CLIP gesture recognition for quick experiments"

@@ -1,0 +1,42 @@
+# IRDS 3D Visualization Configuration for HPC
+# This config is designed to work from the eda/ directory on HPC
+
+# Data loading settings
+data:
+  folder_path: "../data"  # Data is in parent directory
+  file_pattern: "*.txt"
+  has_header: false
+  add_metadata: true
+  columns: null
+  labels_path: "../data/labels.csv"  # Labels in data directory
+
+# Visualization settings
+visualization:
+  x_cols: null
+  frame_col: null
+  max_rows: 500
+  interval_ms: 100
+  point_size: 20
+  elev: 20
+  azim: -60
+  save_path: null  # Don't save animation on HPC (headless)
+  dpi: 100
+  show: false  # Don't show on HPC (headless)
+
+# Skeleton settings
+skeleton:
+  enabled: true
+  num_joints: 25
+  start_col: 0
+  order: "xyz"
+  connect: true
+
+# Filter settings
+filters:
+  source_file: null
+  subject_id: null
+  date_id: null
+  gesture_label: null
+  rep_number: null
+  correct_label: null
+  position: null
