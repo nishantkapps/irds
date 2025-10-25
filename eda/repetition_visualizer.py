@@ -3,7 +3,7 @@ Repetition Visualizer - Integrates with existing run_3d_visualization
 Shows all repetitions for a subject-gesture combination
 """
 
-import numpy as np
+import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -13,7 +13,7 @@ import sys
 import os
 import glob
 from typing import List, Optional, Tuple
-import numpy as np
+import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import animation
@@ -279,13 +279,13 @@ def visualize_all_repetitions(subject_id: str, gesture_label: str,
         print(f"Preparing animation for Repetition {rep_num}: {len(rep_data)} frames")
         
         # Get skeleton columns
-        numeric_cols = rep_data.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = [col for col in rep_data.columns if rep_data[col].dtype in ['float64', 'float32', 'int64', 'int32']]
         metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                         'correct_label', 'position']
         skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
         
         # Reshape skeleton data
-        skeleton_data = rep_data[skeleton_cols].values
+        skeleton_data = torch.tensor(rep_data[skeleton_cols].values, dtype=torch.float32)
         num_frames = len(skeleton_data)
         num_joints = 25
         coords_per_joint = 3
@@ -360,15 +360,15 @@ def visualize_all_repetitions(subject_id: str, gesture_label: str,
         ax.zaxis.line.set_color('none')
     
     # Set common axis limits
-    all_skeleton_data = np.concatenate([rep['data'] for rep in all_repetitions_data])
+    all_skeleton_data = torch.cat([rep['data'] for rep in all_repetitions_data])
     all_X = all_skeleton_data[:, :, 0]
     all_Y = all_skeleton_data[:, :, 2]  # Swapped
     all_Z = all_skeleton_data[:, :, 1]  # Swapped
     
     for ax in axes:
-        ax.set_xlim(np.nanmin(all_X), np.nanmax(all_X))
-        ax.set_ylim(np.nanmin(all_Y), np.nanmax(all_Y))
-        ax.set_zlim(np.nanmin(all_Z), np.nanmax(all_Z))
+        ax.set_xlim(torch.min(all_X[~torch.isnan(all_X)]).item(), torch.max(all_X[~torch.isnan(all_X)]).item())
+        ax.set_ylim(torch.min(all_Y[~torch.isnan(all_Y)]).item(), torch.max(all_Y[~torch.isnan(all_Y)]).item())
+        ax.set_zlim(torch.min(all_Z[~torch.isnan(all_Z)]).item(), torch.max(all_Z[~torch.isnan(all_Z)]).item())
     
     # Create synchronized animations for all repetitions
     create_multi_skeleton_animation(fig, axes, all_repetitions_data, subject_id, gesture_name)
@@ -435,13 +435,13 @@ def create_multi_skeleton_animation(fig, axes, all_repetitions_data, subject_id,
             Z = frame_data[:, 1]
             
             # Update joints
-            artists['scatter']._offsets3d = (X, Y, Z)
+            artists['scatter']._offsets3d = (X.numpy(), Y.numpy(), Z.numpy())
             
             # Update skeleton connections
             for j, (start_joint, end_joint) in enumerate(connections):
                 if start_joint < len(frame_data) and end_joint < len(frame_data):
-                    start_point = [X[start_joint], Y[start_joint], Z[start_joint]]
-                    end_point = [X[end_joint], Y[end_joint], Z[end_joint]]
+                    start_point = [X[start_joint].item(), Y[start_joint].item(), Z[start_joint].item()]
+                    end_point = [X[end_joint].item(), Y[end_joint].item(), Z[end_joint].item()]
                     artists['lines'][j].set_data([start_point[0], end_point[0]], 
                                                [start_point[1], end_point[1]])
                     artists['lines'][j].set_3d_properties([start_point[2], end_point[2]])

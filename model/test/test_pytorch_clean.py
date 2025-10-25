@@ -69,7 +69,7 @@ def test_training_imports():
     
     try:
         # Test basic imports
-        import numpy as np
+        import torch
         import pandas as pd
         import sklearn
         import matplotlib

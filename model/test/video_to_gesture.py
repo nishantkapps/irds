@@ -5,7 +5,6 @@ Converts video to skeleton data and classifies gestures using trained CLIP model
 """
 
 import cv2
-import numpy as np
 import torch
 import torch.nn as nn
 import joblib
@@ -57,12 +56,12 @@ class VideoToSkeleton:
                 else:
                     skeleton_data.extend([0.0, 0.0, 0.0])  # Pad if missing
             
-            return np.array(skeleton_data)
+            return torch.tensor(skeleton_data, dtype=torch.float32)
         else:
             # Return zeros if no pose detected
-            return np.zeros(75)  # 25 joints * 3 coordinates
+            return torch.zeros(75, dtype=torch.float32)  # 25 joints * 3 coordinates
     
-    def process_video(self, video_path: str, output_fps: int = 30) -> np.ndarray:
+    def process_video(self, video_path: str, output_fps: int = 30) -> torch.Tensor:
         """Process entire video and extract skeleton sequences"""
         cap = cv2.VideoCapture(video_path)
         
@@ -96,8 +95,8 @@ class VideoToSkeleton:
         
         cap.release()
         
-        # Convert to numpy array
-        skeleton_data = np.array(skeleton_sequences)
+        # Convert to tensor
+        skeleton_data = torch.stack(skeleton_sequences)
         print(f"Extracted skeleton data shape: {skeleton_data.shape}")
         
         return skeleton_data
@@ -139,10 +138,10 @@ class GestureClassifier:
         # return model.to(self.device)
         return None  # Placeholder
     
-    def preprocess_skeleton_data(self, skeleton_data: np.ndarray) -> torch.Tensor:
+    def preprocess_skeleton_data(self, skeleton_data: torch.Tensor) -> torch.Tensor:
         """Preprocess skeleton data for model input"""
         # Normalize skeleton data
-        skeleton_normalized = self.scaler.transform(skeleton_data)
+        skeleton_normalized = self.scaler.transform(skeleton_data.numpy())
         
         # Create sequences of specified length
         sequences = []
@@ -152,16 +151,15 @@ class GestureClassifier:
         
         if len(sequences) == 0:
             # Pad if video is too short
-            sequence = np.tile(skeleton_normalized, (self.sequence_length, 1))
-            sequences = [sequence]
+            sequence = torch.tile(torch.tensor(skeleton_normalized), (self.sequence_length, 1))
+            sequences = [sequence.numpy()]
         
         # Convert to tensor
-        sequences = np.array(sequences)
-        sequences_tensor = torch.FloatTensor(sequences).to(self.device)
+        sequences_tensor = torch.tensor(sequences, dtype=torch.float32).to(self.device)
         
         return sequences_tensor
     
-    def classify_gesture(self, skeleton_data: np.ndarray) -> Tuple[str, str, float]:
+    def classify_gesture(self, skeleton_data: torch.Tensor) -> Tuple[str, str, float]:
         """Classify gesture from skeleton data"""
         # Preprocess data
         sequences = self.preprocess_skeleton_data(skeleton_data)
@@ -179,11 +177,11 @@ class GestureClassifier:
                 # predictions.append(prediction.cpu().numpy())
                 
                 # Placeholder prediction
-                predictions.append(np.random.random((1, len(self.gesture_names))))
+                predictions.append(torch.rand(1, len(self.gesture_names)))
         
         # Average predictions across all sequences
-        avg_prediction = np.mean(predictions, axis=0)
-        predicted_class = np.argmax(avg_prediction)
+        avg_prediction = torch.mean(torch.stack(predictions), dim=0)
+        predicted_class = torch.argmax(avg_prediction).item()
         confidence = float(avg_prediction[0, predicted_class])
         
         # Get gesture name and description

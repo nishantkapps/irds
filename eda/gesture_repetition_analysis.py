@@ -4,7 +4,7 @@ Visualize all repetitions for a subject-gesture combination
 """
 
 import os
-import numpy as np
+import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -84,7 +84,7 @@ def visualize_gesture_repetitions(df: pd.DataFrame, subject_id: str, gesture_lab
         print(f"Showing first {max_reps} repetitions out of {len(reps_df['rep_number'].unique())}")
     
     # Get skeleton columns
-    numeric_cols = reps_df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = [col for col in reps_df.columns if reps_df[col].dtype in ['float64', 'float32', 'int64', 'int32']]
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                     'correct_label', 'position']
     skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
@@ -94,7 +94,7 @@ def visualize_gesture_repetitions(df: pd.DataFrame, subject_id: str, gesture_lab
     fig = plt.figure(figsize=(5 * n_reps, 12))
     
     # Colors for different repetitions
-    colors = plt.cm.Set3(np.linspace(0, 1, n_reps))
+    colors = plt.cm.Set3(torch.linspace(0, 1, n_reps).numpy())
     
     for i, rep_num in enumerate(unique_reps):
         # Get data for this repetition
@@ -148,14 +148,14 @@ def visualize_gesture_repetitions(df: pd.DataFrame, subject_id: str, gesture_lab
         ax.view_init(elev=20, azim=90)
         
         # Set axis limits based on all data
-        all_data = reps_df[skeleton_cols].values.reshape(-1, num_joints, coords_per_joint)
+        all_data = torch.tensor(reps_df[skeleton_cols].values, dtype=torch.float32).reshape(-1, num_joints, coords_per_joint)
         all_X = all_data[:, :, 0]
         all_Y = all_data[:, :, 2]  # Swapped
         all_Z = all_data[:, :, 1]  # Swapped
         
-        ax.set_xlim(np.nanmin(all_X), np.nanmax(all_X))
-        ax.set_ylim(np.nanmin(all_Y), np.nanmax(all_Y))
-        ax.set_zlim(np.nanmin(all_Z), np.nanmax(all_Z))
+        ax.set_xlim(torch.min(all_X[~torch.isnan(all_X)]).item(), torch.max(all_X[~torch.isnan(all_X)]).item())
+        ax.set_ylim(torch.min(all_Y[~torch.isnan(all_Y)]).item(), torch.max(all_Y[~torch.isnan(all_Y)]).item())
+        ax.set_zlim(torch.min(all_Z[~torch.isnan(all_Z)]).item(), torch.max(all_Z[~torch.isnan(all_Z)]).item())
     
     # Create trajectory plot
     ax_traj = fig.add_subplot(2, 1, 2)
@@ -168,16 +168,16 @@ def visualize_gesture_repetitions(df: pd.DataFrame, subject_id: str, gesture_lab
             continue
             
         # Get center of mass trajectory
-        skeleton_data = rep_data[skeleton_cols].values
+        skeleton_data = torch.tensor(rep_data[skeleton_cols].values, dtype=torch.float32)
         skeleton_reshaped = skeleton_data.reshape(len(skeleton_data), num_joints, coords_per_joint)
         
         # Calculate center of mass for each frame
-        com_trajectory = np.mean(skeleton_reshaped, axis=1)  # (frames, 3)
+        com_trajectory = torch.mean(skeleton_reshaped, dim=1)  # (frames, 3)
         
         # Apply coordinate transformation
-        X_traj = com_trajectory[:, 0]
-        Y_traj = com_trajectory[:, 2]  # Swapped
-        Z_traj = com_trajectory[:, 1]  # Swapped
+        X_traj = com_trajectory[:, 0].numpy()
+        Y_traj = com_trajectory[:, 2].numpy()  # Swapped
+        Z_traj = com_trajectory[:, 1].numpy()  # Swapped
         
         # Plot trajectory
         ax_traj.plot(X_traj, Y_traj, c=colors[i], label=f'Rep {rep_num}', linewidth=2, alpha=0.8)
@@ -220,7 +220,7 @@ def analyze_repetition_variability(df: pd.DataFrame, subject_id: str, gesture_la
     gesture_name = gesture_labels.get(gesture_label, f"Gesture {gesture_label}")
     
     # Get skeleton columns
-    numeric_cols = reps_df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = [col for col in reps_df.columns if reps_df[col].dtype in ['float64', 'float32', 'int64', 'int32']]
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                     'correct_label', 'position']
     skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
@@ -252,17 +252,17 @@ def analyze_repetition_variability(df: pd.DataFrame, subject_id: str, gesture_la
         
         for joint_idx in range(25):
             joint_data = skeleton_reshaped[:, joint_idx, :]
-            joint_range = np.max(joint_data, axis=0) - np.min(joint_data, axis=0)
-            joint_ranges.append(np.linalg.norm(joint_range))  # Euclidean norm
+            joint_range = torch.max(joint_data, dim=0)[0] - torch.min(joint_data, dim=0)[0]
+            joint_ranges.append(torch.norm(joint_range).item())  # Euclidean norm
         
-        rep_stat['avg_joint_range'] = np.mean(joint_ranges)
-        rep_stat['max_joint_range'] = np.max(joint_ranges)
-        rep_stat['min_joint_range'] = np.min(joint_ranges)
+        rep_stat['avg_joint_range'] = torch.mean(torch.tensor(joint_ranges)).item()
+        rep_stat['max_joint_range'] = torch.max(torch.tensor(joint_ranges)).item()
+        rep_stat['min_joint_range'] = torch.min(torch.tensor(joint_ranges)).item()
         
         # Calculate center of mass movement
-        com_trajectory = np.mean(skeleton_reshaped, axis=1)
-        com_range = np.max(com_trajectory, axis=0) - np.min(com_trajectory, axis=0)
-        rep_stat['com_range'] = np.linalg.norm(com_range)
+        com_trajectory = torch.mean(skeleton_reshaped, dim=1)
+        com_range = torch.max(com_trajectory, dim=0)[0] - torch.min(com_trajectory, dim=0)[0]
+        rep_stat['com_range'] = torch.norm(com_range).item()
         
         rep_stats.append(rep_stat)
     
@@ -364,7 +364,7 @@ def compare_subjects_gesture(df: pd.DataFrame, gesture_label: str, max_subjects:
     if len(subjects) == 1:
         axes = axes.reshape(2, 1)
     
-    colors = plt.cm.Set1(np.linspace(0, 1, len(subjects)))
+    colors = plt.cm.Set1(torch.linspace(0, 1, len(subjects)).numpy())
     
     for i, subject_id in enumerate(subjects):
         # Get data for this subject
@@ -374,14 +374,14 @@ def compare_subjects_gesture(df: pd.DataFrame, gesture_label: str, max_subjects:
             continue
         
         # Get skeleton columns
-        numeric_cols = subject_df.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = [col for col in subject_df.columns if subject_df[col].dtype in ['float64', 'float32', 'int64', 'int32']]
         metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                         'correct_label', 'position']
         skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
         
         # Plot first repetition
         first_rep = subject_df[subject_df['rep_number'] == subject_df['rep_number'].iloc[0]]
-        skeleton_data = first_rep[skeleton_cols].values
+        skeleton_data = torch.tensor(first_rep[skeleton_cols].values, dtype=torch.float32)
         num_frames = len(skeleton_data)
         skeleton_reshaped = skeleton_data.reshape(num_frames, 25, 3)
         
@@ -392,9 +392,9 @@ def compare_subjects_gesture(df: pd.DataFrame, gesture_label: str, max_subjects:
         # Sample frames
         for frame_idx in range(0, num_frames, max(1, num_frames // 8)):
             frame_data = skeleton_reshaped[frame_idx]
-            X = frame_data[:, 0]
-            Y = frame_data[:, 2]  # Swapped
-            Z = frame_data[:, 1]  # Swapped
+            X = frame_data[:, 0].numpy()
+            Y = frame_data[:, 2].numpy()  # Swapped
+            Z = frame_data[:, 1].numpy()  # Swapped
             
             ax_3d.scatter(X, Y, Z, c=colors[i], s=20, alpha=0.6)
         
@@ -407,12 +407,12 @@ def compare_subjects_gesture(df: pd.DataFrame, gesture_label: str, max_subjects:
         # Plot trajectory for each repetition
         for rep_num in sorted(subject_df['rep_number'].unique()):
             rep_data = subject_df[subject_df['rep_number'] == rep_num]
-            skeleton_data = rep_data[skeleton_cols].values
+            skeleton_data = torch.tensor(rep_data[skeleton_cols].values, dtype=torch.float32)
             skeleton_reshaped = skeleton_data.reshape(len(skeleton_data), 25, 3)
             
-            com_trajectory = np.mean(skeleton_reshaped, axis=1)
-            X_traj = com_trajectory[:, 0]
-            Y_traj = com_trajectory[:, 2]  # Swapped
+            com_trajectory = torch.mean(skeleton_reshaped, dim=1)
+            X_traj = com_trajectory[:, 0].numpy()
+            Y_traj = com_trajectory[:, 2].numpy()  # Swapped
             
             ax_traj.plot(X_traj, Y_traj, c=colors[i], alpha=0.7, linewidth=2)
         

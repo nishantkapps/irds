@@ -5,9 +5,8 @@ Combines skeleton data with text descriptions for gesture recognition
 
 import os
 import glob
-import numpy as np
-import pandas as pd
 import torch
+import pandas as pd
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
@@ -107,7 +106,7 @@ def load_irds_data(folder_path: str = "../../data",
 class CLIPGestureDataset(Dataset):
     """PyTorch Dataset for CLIP-style gesture recognition"""
     
-    def __init__(self, skeleton_data: np.ndarray, gesture_labels: np.ndarray, 
+    def __init__(self, skeleton_data: torch.Tensor, gesture_labels: torch.Tensor, 
                  gesture_descriptions: List[str], sequence_length: int = 10):
         """
         Args:
@@ -401,7 +400,7 @@ class CLIPGestureTrainer:
 
 def prepare_clip_gesture_data(folder_path: str = "../../data",
                              max_files: int = 50,
-                             sequence_length: int = 10) -> Tuple[np.ndarray, np.ndarray, List[str], List[str]]:
+                             sequence_length: int = 10) -> Tuple[torch.Tensor, torch.Tensor, List[str], List[str]]:
     """
     Prepare data for CLIP-style gesture recognition
     
@@ -424,7 +423,7 @@ def prepare_clip_gesture_data(folder_path: str = "../../data",
     print(f"Loaded {len(df)} rows from {max_files} files")
     
     # Get numeric columns (skeleton data)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[torch.number]).columns.tolist()
     
     # Remove metadata columns
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
@@ -437,11 +436,11 @@ def prepare_clip_gesture_data(folder_path: str = "../../data",
     num_joints = 25
     coords_per_joint = 3
     
-    skeleton_data = df[skeleton_cols].values
+    skeleton_data = torch.tensor(df[skeleton_cols].values, dtype=torch.float32)
     skeleton_data = skeleton_data.reshape(-1, num_joints, coords_per_joint)
     
     # Get gesture labels
-    gesture_labels_numeric = df['gesture_label'].astype(int).values
+    gesture_labels_numeric = torch.tensor(df['gesture_label'].astype(int).values, dtype=torch.long)
     
     # Create sequences
     sequences = []
@@ -453,8 +452,8 @@ def prepare_clip_gesture_data(folder_path: str = "../../data",
         sequences.append(sequence)
         sequence_labels.append(label)
     
-    X = np.array(sequences)
-    y = np.array(sequence_labels)
+    X = torch.stack(sequences)
+    y = torch.stack(sequence_labels)
     
     # Get unique gesture names and descriptions
     unique_labels = sorted(df['gesture_label'].unique())
@@ -486,7 +485,7 @@ def prepare_clip_gesture_data(folder_path: str = "../../data",
     return X, y, gesture_names, gesture_descriptions
 
 
-def train_clip_gesture_model(X: np.ndarray, y: np.ndarray, gesture_names: List[str],
+def train_clip_gesture_model(X: torch.Tensor, y: torch.Tensor, gesture_names: List[str],
                            gesture_descriptions: List[str], sequence_length: int = 10,
                            batch_size: int = 32, num_epochs: int = 50,
                            learning_rate: float = 0.001, test_size: float = 0.2,
@@ -498,13 +497,23 @@ def train_clip_gesture_model(X: np.ndarray, y: np.ndarray, gesture_names: List[s
     
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42, stratify=y
+        X.numpy(), y.numpy(), test_size=test_size, random_state=42, stratify=y.numpy()
     )
+    
+    # Convert back to tensors
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    y_test = torch.tensor(y_test, dtype=torch.long)
     
     # Normalize data
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
     X_test_scaled = scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
+    
+    # Convert back to tensors
+    X_train_scaled = torch.tensor(X_train_scaled, dtype=torch.float32)
+    X_test_scaled = torch.tensor(X_test_scaled, dtype=torch.float32)
     
     # Create datasets
     train_dataset = CLIPGestureDataset(X_train_scaled, y_train, gesture_descriptions, sequence_length)
@@ -622,7 +631,7 @@ def train_clip_gesture_model(X: np.ndarray, y: np.ndarray, gesture_names: List[s
     return model, scaler, gesture_names, gesture_descriptions
 
 
-def predict_clip_gesture(model, scaler, sequence_data: np.ndarray, 
+def predict_clip_gesture(model, scaler, sequence_data: torch.Tensor, 
                         gesture_names: List[str], gesture_descriptions: List[str]) -> str:
     """
     Predict gesture from a sequence of skeleton data using CLIP model
@@ -633,7 +642,7 @@ def predict_clip_gesture(model, scaler, sequence_data: np.ndarray,
     sequence_scaled = scaler.transform(sequence_data.reshape(-1, sequence_data.shape[-1])).reshape(sequence_data.shape)
     
     # Add batch dimension
-    sequence_tensor = torch.FloatTensor(sequence_scaled).unsqueeze(0)
+    sequence_tensor = torch.tensor(sequence_scaled, dtype=torch.float32).unsqueeze(0)
     
     with torch.no_grad():
         outputs = model(sequence_tensor)

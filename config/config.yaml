@@ -1,14 +1,21 @@
 # IRDS 3D Visualization Configuration
 # Edit this file to customize your visualization settings
 
+# Debug settings
+debug:
+  level: "Info"  # Options: "Debug", "Info", "Warning", "Error", "Off"
+  show_tensor_info: true
+  show_memory_usage: true
+  show_timing: true
+
 # Data loading settings
 data:
-  folder_path: "../data"
+  folder_path: null  # Will use project data directory
   file_pattern: "*.txt"
   has_header: false
   add_metadata: true
   columns: null  # Set to list of column names if needed
-  labels_path: "../data/labels.csv"  # Path to gesture labels CSV file
+  labels_path: null  # Will use project data directory
 
 # Visualization settings
 visualization:
@@ -21,7 +28,7 @@ visualization:
   azim: -60
   save_path: null  # Set to output file path (.gif or .mp4)
   dpi: 100
-  show: false  # Set to false for headless environments (HPC)
+  show: true  # Set to false for headless environments (HPC)
 
 # Skeleton settings (for 25 joints mode)
 skeleton:

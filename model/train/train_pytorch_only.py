@@ -7,16 +7,16 @@ Avoids NumPy operations that can cause GPU conflicts
 print("=== SCRIPT STARTING ===")
 
 import yaml
-print("✓ yaml imported")
+print("+ yaml imported")
 
 import argparse
-print("✓ argparse imported")
+print("+ argparse imported")
 
 import os
-print("✓ os imported")
+print("+ os imported")
 
 import torch
-print("✓ torch imported")
+print("+ torch imported")
 
 print("About to import from clip_gesture_model_pytorch...")
 try:
@@ -24,18 +24,35 @@ try:
     import os
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
     from clip_gesture_model_pytorch import prepare_clip_gesture_data_pytorch, train_clip_gesture_model_pytorch, check_rocm_availability
-    print("✓ clip_gesture_model_pytorch imported successfully")
+    print("+ clip_gesture_model_pytorch imported successfully")
     
     # Ensure outputs directory exists
     os.makedirs('outputs', exist_ok=True)
-    print("✓ outputs directory ensured")
+    print("+ outputs directory ensured")
 except Exception as e:
-    print(f"❌ Import error: {e}")
+    print(f"ERROR: Import error: {e}")
     exit(1)
+
+# Import project utilities
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_data_path, get_config_path, setup_logger, get_logger
 
 def load_config(config_path: str) -> dict:
     """Load configuration from YAML file"""
     print(config_path)
+    
+    # If path doesn't exist, try to find it using utility
+    if not os.path.exists(config_path):
+        config_file = get_config_path() / 'config_high_accuracy.yaml'
+        if config_file.exists():
+            config_path = str(config_file)
+        else:
+            # Fallback to default config
+            config_file = get_config_path() / 'config.yaml'
+            if config_file.exists():
+                config_path = str(config_file)
+    
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
     return config
@@ -56,8 +73,11 @@ def main():
     # Load configuration
     config = load_config(args.config)
     
-    print("=== CLIP Gesture Model Training - PyTorch Only ===")
-    print(f"Config file: {args.config}")
+    # Setup logger from config
+    logger = setup_logger(config)
+    
+    logger.info("=== CLIP Gesture Model Training - PyTorch Only ===")
+    logger.info(f"Config file: {args.config}")
     
     # Set ROCm environment first
     os.environ['HIP_VISIBLE_DEVICES'] = '0,1,2,3'
@@ -68,65 +88,81 @@ def main():
     # Set device with PyTorch-only approach
     if torch.cuda.is_available():
         device_count = torch.cuda.device_count()
-        print(f"Available GPUs: {device_count}")
+        logger.info(f"Available GPUs: {device_count}")
         
         if args.gpu is not None:
             # Use specified GPU directly
             gpu_id = args.gpu
-            print(f"Using specified GPU {gpu_id}")
+            logger.info(f"Using specified GPU {gpu_id}")
             device = f'cuda:{gpu_id}'
-            print(f"GPU: {torch.cuda.get_device_name(gpu_id)}")
-            print(f"GPU Memory: {torch.cuda.get_device_properties(gpu_id).total_memory / 1024**3:.1f} GB")
+            logger.info(f"GPU: {torch.cuda.get_device_name(gpu_id)}")
+            logger.info(f"GPU Memory: {torch.cuda.get_device_properties(gpu_id).total_memory / 1024**3:.1f} GB")
         else:
             # Use first available GPU
             device = f'cuda:0'
-            print(f"Using GPU 0: {torch.cuda.get_device_name(0)}")
-            print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+            logger.info(f"Using GPU 0: {torch.cuda.get_device_name(0)}")
+            logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
     else:
         device = 'cpu'
-        print("CUDA not available, using CPU")
+        logger.info("CUDA not available, using CPU")
     
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
     
-    device='cuda'
     # Proceed directly to training
     if device.startswith('cuda'):
-        print(f"Using GPU: {device}")
+        logger.info(f"Using GPU: {device}")
     
     # Prepare data with PyTorch only
-    print("\n=== Preparing Data (PyTorch Only) ===")
-    print("About to call prepare_clip_gesture_data_pytorch...")
+    logger.info("=== Preparing Data (PyTorch Only) ===")
+    logger.debug("About to call prepare_clip_gesture_data_pytorch...")
     data_config = config.get('data', {})
-    print(f"Data config: {data_config}")
-    print(f"Folder path: {data_config.get('folder_path', 'data')}")
-    print(f"Max files: {data_config.get('max_files', 200)}")
-    print(f"Sequence length: {data_config.get('sequence_length', 15)}")
+    logger.debug(f"Data config: {data_config}")
+    logger.debug(f"Folder path: {data_config.get('folder_path', 'data')}")
+    logger.debug(f"Max files: {data_config.get('max_files', 200)}")
+    logger.debug(f"Sequence length: {data_config.get('sequence_length', 15)}")
     
-    print("Calling prepare_clip_gesture_data_pytorch now...")
+    logger.info("Calling prepare_clip_gesture_data_pytorch now...")
     try:
-        # Add timeout to prevent hanging
-        import signal
+        # Use threading-based timeout for cross-platform compatibility
+        import threading
+        import time
         
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Data preparation timed out")
+        result = [None]
+        exception = [None]
         
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(60)  # 60 second timeout
+        def run_data_prep():
+            try:
+                result[0] = prepare_clip_gesture_data_pytorch(
+                    folder_path=data_config.get('folder_path', str(get_data_path())),
+                    max_files=data_config.get('max_files', 200),
+                    sequence_length=data_config.get('sequence_length', 15)
+                )
+            except Exception as e:
+                exception[0] = e
         
-        X, y, gesture_names, gesture_descriptions = prepare_clip_gesture_data_pytorch(
-            folder_path=data_config.get('folder_path', '../../data'),
-            max_files=data_config.get('max_files', 200),
-            sequence_length=data_config.get('sequence_length', 15)
-        )
+        # Start data preparation in a separate thread
+        thread = threading.Thread(target=run_data_prep)
+        thread.daemon = True
+        thread.start()
         
-        signal.alarm(0)  # Cancel timeout
+        # Wait for completion with timeout
+        thread.join(timeout=60)  # 60 second timeout
+        
+        if thread.is_alive():
+            print("ERROR: Data preparation timed out after 60 seconds")
+            return
+        
+        if exception[0]:
+            raise exception[0]
+        
+        if result[0] is None:
+            print("ERROR: Data preparation failed - no result returned")
+            return
+            
+        X, y, gesture_names, gesture_descriptions = result[0]
         print("prepare_clip_gesture_data_pytorch completed!")
-    except TimeoutError:
-        print("❌ Data preparation timed out after 60 seconds")
-        print("Try reducing max_files in config or using a smaller dataset")
-        return
     except Exception as e:
-        print(f"❌ prepare_clip_gesture_data_pytorch failed: {e}")
+        print(f"ERROR: prepare_clip_gesture_data_pytorch failed: {e}")
         import traceback
         traceback.print_exc()
         return
@@ -158,7 +194,7 @@ def main():
         )
         print("train_clip_gesture_model_pytorch completed!")
     except Exception as e:
-        print(f"❌ train_clip_gesture_model_pytorch failed: {e}")
+        print(f"ERROR: train_clip_gesture_model_pytorch failed: {e}")
         import traceback
         traceback.print_exc()
         return

@@ -2,23 +2,31 @@ import os
 import glob
 from typing import List, Optional, Tuple
 
-import numpy as np
+import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - needed for 3D projection
 
+# Import project utilities
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_data_path, get_config_path
 
-def load_gesture_labels(labels_path: str = "../data/labels.csv") -> dict:
+
+def load_gesture_labels(labels_path: Optional[str] = None) -> dict:
     """
     Load gesture labels from CSV file.
     
     Args:
-        labels_path: Path to labels.csv file
+        labels_path: Path to labels.csv file. If None, uses project data directory.
         
     Returns:
         Dictionary mapping gesture_label to gesture_name
     """
+    if labels_path is None:
+        labels_path = str(get_data_path() / 'labels.csv')
+    
     try:
         labels_df = pd.read_csv(labels_path)
         return dict(zip(labels_df['GestureIndex'].astype(str), labels_df['GestureName']))
@@ -31,7 +39,7 @@ def load_gesture_labels(labels_path: str = "../data/labels.csv") -> dict:
 
 
 def load_irds_data(
-    folder_path: str = "../data",
+    folder_path: Optional[str] = None,
     file_pattern: str = "*.txt",
     has_header: bool = False,
     add_metadata: bool = True,
@@ -48,7 +56,7 @@ def load_irds_data(
       subject_date_gesture_rep_correct_position.txt
 
     Args:
-        folder_path: Directory containing data files.
+        folder_path: Directory containing data files. If None, uses project data directory.
         file_pattern: Glob pattern for files (e.g., '*.txt').
         has_header: If True, use first row as header; else create numeric columns.
         add_metadata: If True, parse and add filename-derived metadata columns.
@@ -58,6 +66,9 @@ def load_irds_data(
     Returns:
         Combined pandas DataFrame with all rows and optional metadata columns.
     """
+    if folder_path is None:
+        folder_path = str(get_data_path())
+    
     search_path = os.path.join(folder_path, file_pattern)
     all_files = glob.glob(search_path)
     if len(all_files) == 0:
@@ -159,6 +170,7 @@ def animate_3d_sequence(
     save_path: Optional[str] = None,
     dpi: int = 100,
     gesture_labels: Optional[dict] = None,
+    show: bool = True,
 ) -> animation.FuncAnimation:
     """
     Animate 3D points from a DataFrame as a time sequence.
@@ -203,9 +215,13 @@ def animate_3d_sequence(
     ax.view_init(elev=elev, azim=azim)
 
     # Axis limits from data for a stable viewport
-    x_min, x_max = np.nanmin(df_seq[x_name].values), np.nanmax(df_seq[x_name].values)
-    y_min, y_max = np.nanmin(df_seq[y_name].values), np.nanmax(df_seq[y_name].values)
-    z_min, z_max = np.nanmin(df_seq[z_name].values), np.nanmax(df_seq[z_name].values)
+    x_values = torch.tensor(df_seq[x_name].values, dtype=torch.float32)
+    y_values = torch.tensor(df_seq[y_name].values, dtype=torch.float32)
+    z_values = torch.tensor(df_seq[z_name].values, dtype=torch.float32)
+    
+    x_min, x_max = torch.min(x_values[~torch.isnan(x_values)]).item(), torch.max(x_values[~torch.isnan(x_values)]).item()
+    y_min, y_max = torch.min(y_values[~torch.isnan(y_values)]).item(), torch.max(y_values[~torch.isnan(y_values)]).item()
+    z_min, z_max = torch.min(z_values[~torch.isnan(z_values)]).item(), torch.max(z_values[~torch.isnan(z_values)]).item()
     ax.set_xlim3d(x_min, x_max)
     ax.set_ylim3d(y_min, y_max)
     ax.set_zlim3d(z_min, z_max)
@@ -221,13 +237,13 @@ def animate_3d_sequence(
     if frame_col is not None:
         frame_values = df_seq[frame_col].values
     else:
-        frame_values = np.arange(len(df_seq))
+        frame_values = torch.arange(len(df_seq))
 
     def init():
         scatter._offsets3d = (
-            np.array([first_row[x_name]]),
-            np.array([first_row[y_name]]),
-            np.array([first_row[z_name]]),
+            torch.tensor([first_row[x_name]]).numpy(),
+            torch.tensor([first_row[y_name]]).numpy(),
+            torch.tensor([first_row[z_name]]).numpy(),
         )
         return (scatter,)
 
@@ -239,7 +255,7 @@ def animate_3d_sequence(
         x = row[x_name]
         y = row[y_name]
         z = row[z_name]
-        scatter._offsets3d = (np.array([x]), np.array([y]), np.array([z]))
+        scatter._offsets3d = (torch.tensor([x]).numpy(), torch.tensor([y]).numpy(), torch.tensor([z]).numpy())
         
         # Create title with gesture label, subject ID, repetition, and position if available
         title = f"Frame {frame_idx}"
@@ -280,8 +296,11 @@ def animate_3d_sequence(
         elif ext == ".gif":
             writer = animation.PillowWriter(fps=max(1, int(1000 / max(interval_ms, 1))))
         anim.save(save_path, writer=writer, dpi=dpi)
+    
+    if show:
+        plt.show()
     else:
-        # If no save path and not showing, just create a static plot to avoid animation warning
+        # If not showing, just create a static plot to avoid animation warning
         # This prevents the "Animation was deleted without rendering" warning
         # Create a static frame instead of animation
         update(0)  # Render the first frame
@@ -311,7 +330,8 @@ def infer_xyz_triplets(
     if order not in {"xyz", "xzy", "yxz", "yzx", "zxy", "zyx"}:
         raise ValueError("order must be a permutation of 'x', 'y', 'z'")
 
-    numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
+    # Convert numeric columns to PyTorch tensor
+    numeric_cols = [col for col in df.columns if df[col].dtype in ['float64', 'float32', 'int64', 'int32']]
     if len(numeric_cols) < start_col + num_joints * 3:
         raise ValueError(
             f"Not enough numeric columns: have {len(numeric_cols)}, need at least {start_col + num_joints * 3}"
@@ -366,6 +386,7 @@ def animate_3d_skeleton_sequence(
     dpi: int = 100,
     gesture_labels: Optional[dict] = None,
     interactive: bool = True,
+    show: bool = True,
 ) -> animation.FuncAnimation:
     """
     Animate a skeleton as multiple 3D joints per frame.
@@ -397,9 +418,9 @@ def animate_3d_skeleton_sequence(
         raise ValueError("No valid rows after dropping NaNs for skeleton columns.")
 
     # Precompute arrays per axis
-    X = np.stack([df_seq[x].to_numpy(dtype=float) for (x, _, _) in xyz_cols], axis=1)  # (T, J)
-    Y = np.stack([df_seq[y].to_numpy(dtype=float) for (_, y, _) in xyz_cols], axis=1)
-    Z = np.stack([df_seq[z].to_numpy(dtype=float) for (_, _, z) in xyz_cols], axis=1)
+    X = torch.stack([torch.tensor(df_seq[x].values, dtype=torch.float32) for (x, _, _) in xyz_cols], dim=1)  # (T, J)
+    Y = torch.stack([torch.tensor(df_seq[y].values, dtype=torch.float32) for (_, y, _) in xyz_cols], dim=1)
+    Z = torch.stack([torch.tensor(df_seq[z].values, dtype=torch.float32) for (_, _, z) in xyz_cols], dim=1)
     
     # Try coordinate transformation to get upright human pose
     # Swap Y and Z if human is facing down
@@ -422,11 +443,11 @@ def animate_3d_skeleton_sequence(
     # No on-figure buttons; keep plot area larger
 
     # Compute limits across all frames/joints for stable viewport
-    ax.set_xlim3d(np.nanmin(X), np.nanmax(X))
-    ax.set_ylim3d(np.nanmin(Y), np.nanmax(Y))
-    ax.set_zlim3d(np.nanmin(Z), np.nanmax(Z))
+    ax.set_xlim3d(torch.min(X[~torch.isnan(X)]).item(), torch.max(X[~torch.isnan(X)]).item())
+    ax.set_ylim3d(torch.min(Y[~torch.isnan(Y)]).item(), torch.max(Y[~torch.isnan(Y)]).item())
+    ax.set_zlim3d(torch.min(Z[~torch.isnan(Z)]).item(), torch.max(Z[~torch.isnan(Z)]).item())
 
-    scatter = ax.scatter(X[0], Y[0], Z[0], s=point_size, c="red")
+    scatter = ax.scatter(X[0].numpy(), Y[0].numpy(), Z[0].numpy(), s=point_size, c="red")
     
     # Add correctness indicator - positioned lower to avoid title overlap
     correctness_text = ax.text2D(0.02, 0.85, "", transform=ax.transAxes, fontsize=24, 
@@ -442,11 +463,11 @@ def animate_3d_skeleton_sequence(
         line_artists.append(line)
 
     def init():
-        scatter._offsets3d = (X[0], Y[0], Z[0])
+        scatter._offsets3d = (X[0].numpy(), Y[0].numpy(), Z[0].numpy())
         if edges:
             for line, (i, j) in zip(line_artists, edges):
-                line.set_data([X[0, i], X[0, j]], [Y[0, i], Y[0, j]])
-                line.set_3d_properties([Z[0, i], Z[0, j]])
+                line.set_data([X[0, i].numpy(), X[0, j].numpy()], [Y[0, i].numpy(), Y[0, j].numpy()])
+                line.set_3d_properties([Z[0, i].numpy(), Z[0, j].numpy()])
         
         # Set initial correctness indicator
         if len(df_seq) > 0:
@@ -464,11 +485,11 @@ def animate_3d_skeleton_sequence(
         return (scatter, *line_artists, correctness_text)
 
     def update(frame_idx):
-        scatter._offsets3d = (X[frame_idx], Y[frame_idx], Z[frame_idx])
+        scatter._offsets3d = (X[frame_idx].numpy(), Y[frame_idx].numpy(), Z[frame_idx].numpy())
         if edges:
             for line, (i, j) in zip(line_artists, edges):
-                line.set_data([X[frame_idx, i], X[frame_idx, j]], [Y[frame_idx, i], Y[frame_idx, j]])
-                line.set_3d_properties([Z[frame_idx, i], Z[frame_idx, j]])
+                line.set_data([X[frame_idx, i].numpy(), X[frame_idx, j].numpy()], [Y[frame_idx, i].numpy(), Y[frame_idx, j].numpy()])
+                line.set_3d_properties([Z[frame_idx, i].numpy(), Z[frame_idx, j].numpy()])
         
         # Create title with gesture label, subject ID, repetition, and position if available
         title = f"Frame {frame_idx}"
@@ -553,10 +574,11 @@ def animate_3d_skeleton_sequence(
         elif ext == ".gif":
             writer = animation.PillowWriter(fps=max(1, int(1000 / max(interval_ms, 1))))
         anim.save(save_path, writer=writer, dpi=dpi)
+    
+    if show:
+        plt.show()
     else:
-        # If no save path and not showing, just create a static plot to avoid animation warning
-        # This prevents the "Animation was deleted without rendering" warning
-        # Create a static frame instead of animation
+        # If not showing, just create a static plot to avoid animation warning
         update(0)  # Render the first frame
         plt.close(fig)
 
@@ -671,7 +693,8 @@ def run_3d_visualization(
 
     # Choose default x/y/z columns if not provided: first three numeric columns
     if x_cols is None:
-        numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
+        # Convert numeric columns to PyTorch tensor
+        numeric_cols = [col for col in df.columns if df[col].dtype in ['float64', 'float32', 'int64', 'int32']]
         # Auto-enable skeleton mode if we have at least 75 numeric columns (25 joints * 3)
         if not skeleton and len(numeric_cols) >= 75:
             skeleton = True
@@ -708,6 +731,7 @@ def run_3d_visualization(
             save_path=save_path,
             dpi=dpi,
             gesture_labels=gesture_labels,
+            show=show,
         )
     else:
         anim = animate_3d_sequence(
@@ -722,6 +746,7 @@ def run_3d_visualization(
             save_path=save_path,
             dpi=dpi,
             gesture_labels=gesture_labels,
+            show=show,
         )
 
     if show:

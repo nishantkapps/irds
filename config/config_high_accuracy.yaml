@@ -1,8 +1,14 @@
 # High Accuracy Configuration (Target: 90%+)
 # More data, longer training, smaller learning rate
 
+debug:
+  level: "Info"  # Options: "Debug", "Info", "Warning", "Error", "Off"
+  show_tensor_info: true
+  show_memory_usage: true
+  show_timing: true
+
 data:
-  folder_path: "../data"
+  folder_path: null  # Will use project data directory
   max_files: 300                    # More data for better accuracy
   sequence_length: 20               # Longer sequences for better context
   test_size: 0.15                   # Smaller test set for more training data

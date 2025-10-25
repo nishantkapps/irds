@@ -4,9 +4,8 @@ A lightweight version for quick testing and prototyping
 """
 
 import os
-import numpy as np
-import pandas as pd
 import torch
+import pandas as pd
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
@@ -25,9 +24,9 @@ from irds_eda import load_irds_data, load_gesture_labels
 class SimpleGestureDataset(Dataset):
     """Simple dataset for gesture recognition"""
     
-    def __init__(self, data: np.ndarray, labels: np.ndarray):
-        self.data = torch.FloatTensor(data)
-        self.labels = torch.LongTensor(labels)
+    def __init__(self, data: torch.Tensor, labels: torch.Tensor):
+        self.data = data
+        self.labels = labels
     
     def __len__(self):
         return len(self.data)
@@ -57,7 +56,7 @@ class SimpleGestureModel(nn.Module):
 
 
 def prepare_simple_data(folder_path: str = "/home/nishant/project/irds/data",
-                       max_files: int = 10) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+                       max_files: int = 10) -> Tuple[torch.Tensor, torch.Tensor, List[str]]:
     """Prepare data for simple gesture recognition"""
     
     print("Loading IRDS data...")
@@ -73,7 +72,7 @@ def prepare_simple_data(folder_path: str = "/home/nishant/project/irds/data",
     print(f"Loaded {len(df)} rows from {max_files} files")
     
     # Get numeric columns (skeleton data)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[torch.number]).columns.tolist()
     
     # Remove metadata columns
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
@@ -83,8 +82,8 @@ def prepare_simple_data(folder_path: str = "/home/nishant/project/irds/data",
     print(f"Using {len(skeleton_cols)} skeleton columns")
     
     # Get skeleton data and labels
-    X = df[skeleton_cols].values
-    y = df['gesture_label'].astype(int).values
+    X = torch.tensor(df[skeleton_cols].values, dtype=torch.float32)
+    y = torch.tensor(df['gesture_label'].astype(int).values, dtype=torch.long)
     
     # Get unique gesture names
     unique_labels = sorted(df['gesture_label'].unique())
@@ -92,12 +91,12 @@ def prepare_simple_data(folder_path: str = "/home/nishant/project/irds/data",
     
     print(f"Data shape: {X.shape}")
     print(f"Gesture classes: {gesture_names}")
-    print(f"Class distribution: {np.bincount(y)}")
+    print(f"Class distribution: {torch.bincount(y)}")
     
     return X, y, gesture_names
 
 
-def train_simple_model(X: np.ndarray, y: np.ndarray, gesture_names: List[str],
+def train_simple_model(X: torch.Tensor, y: torch.Tensor, gesture_names: List[str],
                       test_size: float = 0.2, num_epochs: int = 20,
                       learning_rate: float = 0.001, batch_size: int = 32):
     """Train the simple gesture model"""
@@ -106,13 +105,23 @@ def train_simple_model(X: np.ndarray, y: np.ndarray, gesture_names: List[str],
     
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42, stratify=y
+        X.numpy(), y.numpy(), test_size=test_size, random_state=42, stratify=y.numpy()
     )
+    
+    # Convert back to tensors
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    y_test = torch.tensor(y_test, dtype=torch.long)
     
     # Normalize data
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    X_train_scaled = scaler.fit_transform(X_train.numpy())
+    X_test_scaled = scaler.transform(X_test.numpy())
+    
+    # Convert back to tensors
+    X_train_scaled = torch.tensor(X_train_scaled, dtype=torch.float32)
+    X_test_scaled = torch.tensor(X_test_scaled, dtype=torch.float32)
     
     # Create datasets
     train_dataset = SimpleGestureDataset(X_train_scaled, y_train)
@@ -234,13 +243,13 @@ def train_simple_model(X: np.ndarray, y: np.ndarray, gesture_names: List[str],
     return model, scaler, gesture_names
 
 
-def predict_gesture_simple(model, scaler, skeleton_data: np.ndarray, gesture_names: List[str]) -> Tuple[str, float]:
+def predict_gesture_simple(model, scaler, skeleton_data: torch.Tensor, gesture_names: List[str]) -> Tuple[str, float]:
     """Predict gesture from skeleton data"""
     model.eval()
     
     # Normalize data
     skeleton_scaled = scaler.transform(skeleton_data.reshape(1, -1))
-    skeleton_tensor = torch.FloatTensor(skeleton_scaled)
+    skeleton_tensor = torch.tensor(skeleton_scaled, dtype=torch.float32)
     
     with torch.no_grad():
         outputs = model(skeleton_tensor)

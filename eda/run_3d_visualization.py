@@ -11,6 +11,10 @@ import argparse
 # Add current directory to path to import irds-eda
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Add project root to path for utilities
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_data_path, get_config_path
+
 try:
     from irds_eda import run_3d_visualization
 except ImportError:
@@ -42,6 +46,12 @@ def load_config(config_path: str) -> dict:
 
 def find_config_file():
     """Find the config file in common locations"""
+    # Use utility to get config path
+    config_path = get_config_path() / 'config.yaml'
+    if config_path.exists():
+        return str(config_path)
+    
+    # Fallback to common locations
     possible_paths = [
         "../config/config.yaml",  # From eda/ directory
         "config/config.yaml",     # From project root

@@ -3,9 +3,8 @@ Demo script for gesture recognition
 Shows how to use the trained model to predict gestures from skeleton data
 """
 
-import numpy as np
-import pandas as pd
 import torch
+import pandas as pd
 import joblib
 from simple_gesture_model import SimpleGestureModel, predict_gesture_simple
 from irds_eda import load_irds_data, load_gesture_labels
@@ -26,7 +25,7 @@ def load_trained_model(model_path: str = 'simple_gesture_model.pth',
     # Create and load model
     # We need to know the input dimension - let's get it from a sample
     df = load_irds_data(folder_path="/home/nishant/project/irds/data", max_files=1)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[torch.number]).columns.tolist()
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                     'correct_label', 'position']
     skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
@@ -51,7 +50,7 @@ def demo_prediction():
     df = df.dropna(subset=['gesture_label'])
     
     # Get skeleton columns
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[torch.number]).columns.tolist()
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                     'correct_label', 'position']
     skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
@@ -98,7 +97,7 @@ def batch_prediction_demo():
     df = df.dropna(subset=['gesture_label'])
     
     # Get skeleton columns
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[torch.number]).columns.tolist()
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                     'correct_label', 'position']
     skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]
@@ -125,10 +124,10 @@ def batch_prediction_demo():
         confidences = torch.max(probabilities, dim=1)[0].numpy()
     
     # Calculate accuracy
-    accuracy = np.mean(predictions == y_test)
+    accuracy = torch.mean((torch.tensor(predictions) == y_test).float()).item()
     
     print(f"Batch Accuracy: {accuracy:.3f}")
-    print(f"Average Confidence: {np.mean(confidences):.3f}")
+    print(f"Average Confidence: {torch.mean(torch.tensor(confidences)).item():.3f}")
     
     # Show some results
     print("\nSample Results:")
@@ -154,7 +153,7 @@ def visualize_predictions():
     df = df.dropna(subset=['gesture_label'])
     
     # Get skeleton columns
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df.select_dtypes(include=[torch.number]).columns.tolist()
     metadata_cols = ['subject_id', 'date_id', 'gesture_label', 'rep_number', 
                     'correct_label', 'position']
     skeleton_cols = [col for col in numeric_cols if col not in metadata_cols]

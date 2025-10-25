@@ -5,7 +5,7 @@ Test the video-to-gesture pipeline with a sample video
 
 import os
 import cv2
-import numpy as np
+import torch
 from video_to_gesture import VideoToSkeleton, GestureClassifier
 
 def create_sample_video(output_path: str, duration: int = 5, fps: int = 30):
@@ -22,20 +22,20 @@ def create_sample_video(output_path: str, duration: int = 5, fps: int = 30):
     
     for frame_num in range(total_frames):
         # Create a simple frame with moving circle (simulating a person)
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        frame = torch.zeros((height, width, 3), dtype=torch.uint8)
         
         # Add some movement
-        center_x = int(width/2 + 50 * np.sin(2 * np.pi * frame_num / fps))
-        center_y = int(height/2 + 30 * np.cos(2 * np.pi * frame_num / fps))
+        center_x = int(width/2 + 50 * torch.sin(2 * torch.pi * frame_num / fps))
+        center_y = int(height/2 + 30 * torch.cos(2 * torch.pi * frame_num / fps))
         
         # Draw a simple "person" (circle for head, rectangle for body)
-        cv2.circle(frame, (center_x, center_y - 50), 20, (255, 255, 255), -1)
-        cv2.rectangle(frame, (center_x - 30, center_y - 30), (center_x + 30, center_y + 50), (255, 255, 255), -1)
+        cv2.circle(frame.numpy(), (center_x, center_y - 50), 20, (255, 255, 255), -1)
+        cv2.rectangle(frame.numpy(), (center_x - 30, center_y - 30), (center_x + 30, center_y + 50), (255, 255, 255), -1)
         
         # Add frame number
-        cv2.putText(frame, f"Frame {frame_num}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(frame.numpy(), f"Frame {frame_num}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         
-        out.write(frame)
+        out.write(frame.numpy())
     
     out.release()
     print(f"Sample video created: {output_path}")
@@ -59,7 +59,7 @@ def test_skeleton_extraction(video_path: str):
     
     return skeleton_data
 
-def test_gesture_classification(skeleton_data: np.ndarray):
+def test_gesture_classification(skeleton_data: torch.Tensor):
     """Test gesture classification (mock)"""
     print(f"\n=== Testing Gesture Classification ===")
     
@@ -73,8 +73,8 @@ def test_gesture_classification(skeleton_data: np.ndarray):
     }
     
     # Simulate classification
-    predicted_class = np.random.randint(0, len(gesture_names))
-    confidence = np.random.uniform(0.7, 0.95)
+    predicted_class = torch.randint(0, len(gesture_names), (1,)).item()
+    confidence = torch.rand(1).item() * 0.25 + 0.7  # Random between 0.7 and 0.95
     
     gesture_name = gesture_names[str(predicted_class)]
     
