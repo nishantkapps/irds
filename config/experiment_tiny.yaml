@@ -1,0 +1,38 @@
+# Experiment: Tiny Model (~500K params)
+# Fast training for quick iteration
+
+debug:
+  level: "Info"
+  show_tensor_info: false
+  show_memory_usage: true
+  show_timing: true
+
+data:
+  folder_path: null
+  max_files: null
+  sequence_length: 15
+  test_size: 0.2
+  random_state: 42
+
+model:
+  architecture: "tiny"
+
+training:
+  num_epochs: 100
+  batch_size: 32
+  learning_rate: 0.001
+  optimizer: "Adam"
+  weight_decay: 0.0001
+
+output:
+  model_save_path: "outputs/model_tiny.pth"
+  scaler_save_path: "outputs/scaler_tiny.json"
+  info_save_path: "outputs/info_tiny.json"
+  plots_save_path: "outputs/curves_tiny.png"
+  confusion_matrix_path: "outputs/confusion_tiny.png"
+
+experiment:
+  name: "gesture_tiny"
+  tags: ["tiny", "500K", "fast"]
+  notes: "Tiny model for rapid prototyping"
+

@@ -4,26 +4,23 @@ CLIP-style Gesture Recognition Model - PyTorch Only Version
 Replaces NumPy operations with PyTorch to avoid GPU conflicts
 """
 
-import os
-import glob
+import os, sys, glob, json
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
-from typing import List, Tuple, Optional, Dict
-import joblib
-import json
-
-# Import project utilities
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils import get_data_path, get_logger
 import pandas as pd
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
+
+path_to_irds = Path(__file__).parent.parent
+sys.path.insert(0, str(path_to_irds))
+
+# Add project root to path for imports
+from tensor_utils import tensor_train_test_split, tensor_scaler_fit_transform
+from utils import get_data_path, get_logger
+from model.model_architectures import get_model, count_parameters, MODEL_INFO
 
 # PyTorch-only data loading functions
 def load_gesture_labels(labels_path: str = "../../data/labels.csv") -> dict:
@@ -63,17 +60,23 @@ def load_irds_data(folder_path: Optional[str] = None,
 
     header = 0 if has_header else None
     list_of_dfs: List[pd.DataFrame] = []
+    skipped_files = 0
     
     for file_path in all_files:
-        df = pd.read_csv(file_path, header=header)
+        try:
+            df = pd.read_csv(file_path, header=header)
 
-        # Assign column names if provided and no header present
-        if not has_header and columns is not None:
-            if len(columns) != df.shape[1]:
-                raise ValueError(
-                    f"Provided columns length {len(columns)} does not match file columns {df.shape[1]} for {file_path}"
-                )
-            df.columns = columns
+            # Assign column names if provided and no header present
+            if not has_header and columns is not None:
+                if len(columns) != df.shape[1]:
+                    logger.info(f"Skipping {file_path}: column mismatch")
+                    skipped_files += 1
+                    continue
+                df.columns = columns
+        except Exception as e:
+            logger.info(f"Skipping {file_path}: {str(e)[:100]}")
+            skipped_files += 1
+            continue
 
         if add_metadata:
             filename = os.path.basename(file_path)
@@ -103,11 +106,15 @@ def load_irds_data(folder_path: Optional[str] = None,
 
         list_of_dfs.append(df)
 
+    if skipped_files > 0:
+        logger.info(f"Skipped {skipped_files} malformed files out of {len(all_files)} total files")
+    
+    logger.info(f"Successfully loaded {len(list_of_dfs)} files")
     combined_df = pd.concat(list_of_dfs, ignore_index=True)
     return combined_df
 
 def prepare_clip_gesture_data_pytorch(folder_path: str = "../../data",
-                                     max_files: int = 50,
+                                     max_files: Optional[int] = None,
                                      sequence_length: int = 10) -> Tuple[torch.Tensor, torch.Tensor, List[str], List[str]]:
     """
     Prepare data for CLIP-style gesture recognition using PyTorch only
@@ -146,14 +153,30 @@ def prepare_clip_gesture_data_pytorch(folder_path: str = "../../data",
     
     logger.info(f"Using {len(skeleton_cols)} skeleton columns")
     
+    # Validate skeleton columns
+    num_joints = 25
+    coords_per_joint = 3
+    expected_cols = num_joints * coords_per_joint
+    
     # Convert to PyTorch tensors immediately
     logger.info("Converting to PyTorch tensors...")
     skeleton_data = torch.FloatTensor(df[skeleton_cols].values)
     logger.info(f"Skeleton data shape: {skeleton_data.shape}")
     
+    # Handle incorrect column count
+    if skeleton_data.shape[1] != expected_cols:
+        logger.info(f"Warning: Expected {expected_cols} skeleton columns but found {skeleton_data.shape[1]}")
+        if skeleton_data.shape[1] < expected_cols:
+            # Pad with zeros
+            padding = torch.zeros(skeleton_data.shape[0], expected_cols - skeleton_data.shape[1])
+            skeleton_data = torch.cat([skeleton_data, padding], dim=1)
+            logger.info(f"Padded to {skeleton_data.shape}")
+        else:
+            # Trim to expected size
+            skeleton_data = skeleton_data[:, :expected_cols]
+            logger.info(f"Trimmed to {skeleton_data.shape}")
+    
     # Reshape skeleton data to (samples, joints, coords)
-    num_joints = 25
-    coords_per_joint = 3
     skeleton_data = skeleton_data.view(-1, num_joints, coords_per_joint)
     logger.info(f"Reshaped skeleton data: {skeleton_data.shape}")
     
@@ -220,7 +243,7 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
                                    gesture_descriptions: List[str], sequence_length: int = 10,
                                    batch_size: int = 32, num_epochs: int = 50,
                                    learning_rate: float = 0.001, test_size: float = 0.2,
-                                   device: str = 'cpu'):
+                                   device: str = 'cpu', model_architecture: str = 'medium'):
     """
     Train the CLIP-style gesture recognition model using PyTorch only
     """
@@ -231,88 +254,46 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     
     logger.info("Preparing CLIP gesture data...")
     
-    # Convert to numpy for sklearn split (minimal numpy usage)
-    logger.info("Converting to numpy...")
-    X_np = X.numpy()
-    y_np = y.numpy()
-    logger.info("Numpy conversion completed")
-    
-    # Split data
+    # Split data using tensor-based function
     logger.info("Splitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_np, y_np, test_size=test_size, random_state=42, stratify=y_np
+    X_train, X_test, y_train, y_test = tensor_train_test_split(
+        X, y, test_size=test_size, random_state=42, stratify=y
     )
     logger.info("Data split completed")
     
-    # Convert back to PyTorch tensors
-    logger.info("Converting back to PyTorch tensors...")
-    X_train = torch.FloatTensor(X_train)
-    X_test = torch.FloatTensor(X_test)
-    y_train = torch.LongTensor(y_train)
-    y_test = torch.LongTensor(y_test)
-    logger.info("PyTorch tensor conversion completed")
-    
-    # Scale data using PyTorch
+    # Scale data using tensor utils
     logger.info("Scaling data...")
     X_train_flat = X_train.view(X_train.size(0), -1)
     X_test_flat = X_test.view(X_test.size(0), -1)
     
-    # Calculate mean and std
-    mean = X_train_flat.mean(dim=0)
-    std = X_train_flat.std(dim=0)
-    
-    # Normalize
-    X_train_flat = (X_train_flat - mean) / (std + 1e-8)
-    X_test_flat = (X_test_flat - mean) / (std + 1e-8)
+    X_train_scaled, X_test_scaled, scaler_params = tensor_scaler_fit_transform(X_train_flat, X_test_flat)
     
     # Reshape back
-    X_train = X_train_flat.view(X_train.shape)
-    X_test = X_test_flat.view(X_test.shape)
+    X_train = X_train_scaled.view(X_train.shape)
+    X_test = X_test_scaled.view(X_test.shape)
     logger.info("Data scaling completed")
     
     logger.info(f"Training data: {X_train.shape}, {y_train.shape}")
     logger.info(f"Test data: {X_test.shape}, {y_test.shape}")
     
     # Move to device - force GPU usage
-    logger.info(f"Moving data to device: {device}")
+    logger.debug(f"Moving data to device: {device}")
+    logger.debug(f"Initial tensor device: {X_train.device}")
     
-    # Test GPU with a small tensor first
-    # print("Testing GPU with small tensor...")
-    # test_tensor = torch.randn(10, 10).to(device)
-    # print(f"✓ GPU test passed: {test_tensor.device}")
-    
-    # Now move the actual data
+    # Move data to device directly
     if device.startswith('cuda'):
-        logger.info("Moving training data to GPU...")
-        logger.info(f"X_train dtype: {X_train.dtype}")
-        logger.info(f"X_train shape: {X_train.shape}")
-        logger.info(f"X_train device: {X_train.device}")
-        logger.info(f"X_train is contiguous: {X_train.is_contiguous()}")
-        logger.info(f"X_train memory usage: {X_train.element_size() * X_train.nelement() / 1e9:.2f} GB")
+        logger.debug("Moving data to GPU...")
         X_train = X_train.to(device)
-        logger.info("+ X_train moved to GPU")
-        
         X_test = X_test.to(device)
-        logger.info("+ X_test moved to GPU")
-        
         y_train = y_train.to(device)
-        logger.info("+ y_train moved to GPU")
-    else:
-        logger.info("Using CPU - no device transfer needed")
-        logger.info(f"X_train dtype: {X_train.dtype}")
-        logger.info(f"X_train shape: {X_train.shape}")
-        logger.info(f"X_train device: {X_train.device}")
-        logger.info(f"X_train memory usage: {X_train.element_size() * X_train.nelement() / 1e9:.2f} GB")
-    
-    if device.startswith('cuda'):
         y_test = y_test.to(device)
-        logger.info("+ y_test moved to GPU")
+        logger.debug("✓ All data moved to GPU")
     else:
-        logger.info("+ y_test using CPU")
+        logger.debug("Using CPU - no device transfer needed")
     
     logger.info(f"Data moved to device: {device}")
-    logger.info(f"X_train device: {X_train.device}")
-    logger.info(f"y_train device: {y_train.device}")
+    logger.debug(f"X_train device: {X_train.device}")
+    logger.debug(f"y_train device: {y_train.device}")
     
     # Create data loaders
     logger.info("Creating data loaders...")
@@ -324,29 +305,25 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     
     logger.info("Data loaders created")
     
-    # Create model (placeholder - you'll need to implement the actual CLIP model)
-    logger.info("Creating model...")
-    class SimpleCLIPModel(nn.Module):
-        def __init__(self, input_size, num_classes):
-            super().__init__()
-            self.encoder = nn.LSTM(input_size, 256, 2, batch_first=True)
-            self.classifier = nn.Linear(256, num_classes)
-        
-        def forward(self, x):
-            # x: (batch, sequence, features)
-            x = x.view(x.size(0), x.size(1), -1)  # Flatten joints and coords
-            lstm_out, _ = self.encoder(x)
-            # Use last output
-            output = self.classifier(lstm_out[:, -1, :])
-            return output
+    # Create model using model architectures
+    logger.info(f"Creating {model_architecture} model...")
     
-    model = SimpleCLIPModel(75, len(gesture_names)).to(device)
+    # Print model info
+    if model_architecture in MODEL_INFO:
+        info = MODEL_INFO[model_architecture]
+        logger.info(f"Model: {model_architecture}")
+        logger.info(f"Expected parameters: {info['params']}")
+        logger.info(f"Description: {info['description']}")
+    
+    model = get_model(model_architecture, 75, len(gesture_names), device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
+    # Count and log actual parameters
+    param_count = count_parameters(model)
     logger.info(f"Model created and moved to {device}")
     logger.info(f"Model device: {next(model.parameters()).device}")
-    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
+    logger.info(f"Actual model parameters: {param_count:,}")
     
     # Test model with a small batch
     test_input = torch.randn(2, 10, 75).to(device)
@@ -374,8 +351,8 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
             
             # Debug: Check device for first batch
             if batch_idx == 0:
-                logger.info(f"Batch X device: {batch_X.device}")
-                logger.info(f"Batch y device: {batch_y.device}")
+                logger.debug(f"Batch X device: {batch_X.device}")
+                logger.debug(f"Batch y device: {batch_y.device}")
             
             # Forward pass
             outputs = model(batch_X)
@@ -395,7 +372,7 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
         train_losses.append(avg_loss)
         train_accuracies.append(accuracy)
         
-        if epoch % 10 == 0:
+        if epoch % 2 == 0:
             logger.info(f"Epoch {epoch}/{num_epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%")
     
     # Test the model
@@ -416,10 +393,10 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     # Save model
     torch.save(model.state_dict(), 'outputs/clip_gesture_model_pytorch.pth')
     
-    # Save scaler info (mean and std)
+    # Save scaler info using tensor utils
     scaler_info = {
-        'mean': mean.tolist(),
-        'std': std.tolist()
+        'mean': scaler_params['mean'].tolist(),
+        'std': scaler_params['std'].tolist()
     }
     with open('outputs/clip_gesture_scaler_pytorch.json', 'w') as f:
         json.dump(scaler_info, f)
@@ -435,10 +412,11 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     
     logger.info("Model saved successfully!")
     
-    return model, scaler_info, gesture_names, gesture_descriptions
+    return model, scaler_params, gesture_names, gesture_descriptions
 
 def check_rocm_availability():
     """Check if ROCm is available and working"""
+    logger = get_logger()
     try:
         if torch.cuda.is_available():
             # Try to create a tensor on GPU to verify it works
@@ -450,19 +428,21 @@ def check_rocm_availability():
         return False
 
 if __name__ == "__main__":
+    logger = get_logger()
+    
     # Set device
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     logger.info(f"Using device: {device}")
     
-    # Prepare data with PyTorch only
+    # Prepare data with PyTorch only - train on all files
     X, y, gesture_names, gesture_descriptions = prepare_clip_gesture_data_pytorch(
         folder_path="data",
-        max_files=100,
+        max_files=None,  # Use all available files
         sequence_length=15
     )
     
     # Train model
-    model, scaler, gesture_names, gesture_descriptions = train_clip_gesture_model_pytorch(
+    model, scaler_params, gesture_names, gesture_descriptions = train_clip_gesture_model_pytorch(
         X, y, gesture_names, gesture_descriptions,
         sequence_length=15,
         batch_size=16,

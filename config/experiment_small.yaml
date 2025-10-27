@@ -1,0 +1,38 @@
+# Experiment: Small Model (~1.5M params)
+# Good for simple gesture recognition
+
+debug:
+  level: "Info"
+  show_tensor_info: false
+  show_memory_usage: true
+  show_timing: true
+
+data:
+  folder_path: null
+  max_files: null
+  sequence_length: 15
+  test_size: 0.2
+  random_state: 42
+
+model:
+  architecture: "small"
+
+training:
+  num_epochs: 120
+  batch_size: 16
+  learning_rate: 0.0005
+  optimizer: "Adam"
+  weight_decay: 0.0001
+
+output:
+  model_save_path: "outputs/model_small.pth"
+  scaler_save_path: "outputs/scaler_small.json"
+  info_save_path: "outputs/info_small.json"
+  plots_save_path: "outputs/curves_small.png"
+  confusion_matrix_path: "outputs/confusion_small.png"
+
+experiment:
+  name: "gesture_small"
+  tags: ["small", "1.5M", "balanced"]
+  notes: "Small model for simple datasets"
+

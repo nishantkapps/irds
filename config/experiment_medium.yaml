@@ -1,0 +1,38 @@
+# Experiment: Medium Model (~4M params)  
+# Recommended for most use cases
+
+debug:
+  level: "Info"
+  show_tensor_info: false
+  show_memory_usage: true
+  show_timing: true
+
+data:
+  folder_path: null
+  max_files: null
+  sequence_length: 20
+  test_size: 0.2
+  random_state: 42
+
+model:
+  architecture: "medium"
+
+training:
+  num_epochs: 150
+  batch_size: 16
+  learning_rate: 0.0003
+  optimizer: "Adam"
+  weight_decay: 0.0001
+
+output:
+  model_save_path: "outputs/model_medium.pth"
+  scaler_save_path: "outputs/scaler_medium.json"
+  info_save_path: "outputs/info_medium.json"
+  plots_save_path: "outputs/curves_medium.png"
+  confusion_matrix_path: "outputs/confusion_medium.png"
+
+experiment:
+  name: "gesture_medium"
+  tags: ["medium", "4M", "recommended"]
+  notes: "Medium model - balanced capacity and speed"
+

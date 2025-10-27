@@ -9,26 +9,20 @@ debug:
 
 data:
   folder_path: null  # Will use project data directory
-  max_files: 300                    # More data for better accuracy
+  max_files: null                   # Use all available files
   sequence_length: 20               # Longer sequences for better context
   test_size: 0.15                   # Smaller test set for more training data
   random_state: 42
 
 model:
-  skeleton_encoder:
-    hidden_dim: 512                 # Larger hidden dimension
-    num_layers: 3                  # More layers
-    dropout: 0.3                   # More dropout for regularization
-    attention_heads: 16            # More attention heads
-    
-  text_encoder:
-    embedding_dim: 256             # Larger text embedding
-    hidden_dim: 512                # Larger text encoder
-    num_layers: 3                  # More layers
-    
-  clip_model:
-    embedding_dim: 512             # Larger final embedding
-    logit_scale: 0.05              # Lower temperature
+  architecture: "medium"           # Options: tiny, small, medium, large, xlarge, xxlarge
+  # Model size guide:
+  #   tiny: ~500K params - fast experiments
+  #   small: ~1.5M params - simple datasets
+  #   medium: ~4M params - balanced (recommended)
+  #   large: ~11M params - high capacity
+  #   xlarge: ~20M params - may overfit
+  #   xxlarge: ~35M params - very large datasets only
 
 training:
   num_epochs: 150                  # More epochs
