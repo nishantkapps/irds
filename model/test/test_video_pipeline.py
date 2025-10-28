@@ -25,8 +25,9 @@ def create_sample_video(output_path: str, duration: int = 5, fps: int = 30):
         frame = torch.zeros((height, width, 3), dtype=torch.uint8)
         
         # Add some movement
-        center_x = int(width/2 + 50 * torch.sin(2 * torch.pi * frame_num / fps))
-        center_y = int(height/2 + 30 * torch.cos(2 * torch.pi * frame_num / fps))
+        import math
+        center_x = int(width/2 + 50 * math.sin(2 * math.pi * frame_num / fps))
+        center_y = int(height/2 + 30 * math.cos(2 * math.pi * frame_num / fps))
         
         # Draw a simple "person" (circle for head, rectangle for body)
         cv2.circle(frame.numpy(), (center_x, center_y - 50), 20, (255, 255, 255), -1)

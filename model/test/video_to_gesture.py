@@ -6,15 +6,17 @@ Converts video to skeleton data and classifies gestures using trained CLIP model
 
 import cv2
 import torch
-import torch.nn as nn
-import joblib
 import json
 import os
+import sys
 import argparse
 from typing import List, Tuple, Optional
 import mediapipe as mp
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from model.model_architectures import get_model
+from tensor_utils import tensor_scaler_transform
 
 class VideoToSkeleton:
     """Convert video frames to skeleton data using MediaPipe"""
@@ -28,136 +30,121 @@ class VideoToSkeleton:
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
-        self.mp_drawing = mp.solutions.drawing_utils
-        
-    def extract_skeleton_from_frame(self, frame):
-        """Extract skeleton keypoints from a single frame"""
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.pose.process(rgb_frame)
-        
-        if results.pose_landmarks:
-            # Extract 25 keypoints (MediaPipe provides 33, we need 25)
-            landmarks = results.pose_landmarks.landmark
-            
-            # Map MediaPipe landmarks to our 25-joint format
-            # This mapping needs to be adjusted based on your joint definitions
-            keypoint_indices = [
-                11, 12, 13, 14, 15, 16,  # Arms
-                23, 24, 25, 26, 27, 28,  # Legs
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  # Torso and head
-                17, 18, 19, 20, 21, 22   # Additional points
-            ]
-            
-            skeleton_data = []
-            for idx in keypoint_indices[:25]:  # Take first 25
-                if idx < len(landmarks):
-                    landmark = landmarks[idx]
-                    skeleton_data.extend([landmark.x, landmark.y, landmark.z])
-                else:
-                    skeleton_data.extend([0.0, 0.0, 0.0])  # Pad if missing
-            
-            return torch.tensor(skeleton_data, dtype=torch.float32)
-        else:
-            # Return zeros if no pose detected
-            return torch.zeros(75, dtype=torch.float32)  # 25 joints * 3 coordinates
     
-    def process_video(self, video_path: str, output_fps: int = 30) -> torch.Tensor:
-        """Process entire video and extract skeleton sequences"""
+    def process_video(self, video_path: str) -> torch.Tensor:
+        """Extract skeleton data from video"""
         cap = cv2.VideoCapture(video_path)
-        
         if not cap.isOpened():
             raise ValueError(f"Could not open video: {video_path}")
-        
-        # Get video properties
-        original_fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / original_fps
-        
-        print(f"Video: {video_path}")
-        print(f"Original FPS: {original_fps:.2f}, Duration: {duration:.2f}s")
-        print(f"Total frames: {total_frames}")
         
         skeleton_sequences = []
         frame_count = 0
         
-        while cap.isOpened():
+        while True:
             ret, frame = cap.read()
             if not ret:
                 break
             
-            # Extract skeleton from frame
-            skeleton = self.extract_skeleton_from_frame(frame)
-            skeleton_sequences.append(skeleton)
-            frame_count += 1
+            # Convert to RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            if frame_count % 100 == 0:
-                print(f"Processed {frame_count}/{total_frames} frames")
+            # Process with MediaPipe
+            results = self.pose.process(frame_rgb)
+            
+            if results.pose_landmarks:
+                # Extract 25 landmarks (x, y, z) = 75 features
+                # MediaPipe outputs normalized coords [0,1], but training data uses world coordinates
+                # Convert to match training data range (centered around 0, scaled appropriately)
+                landmarks = []
+                for landmark in results.pose_landmarks.landmark[:25]:
+                    # Convert from [0,1] to centered coordinates matching training data
+                    # Training data has range roughly [-0.5, 0.5] for x,y and [2, 3] for z
+                    x = (landmark.x - 0.5) * 1.0  # Center and scale x
+                    y = (landmark.y - 0.5) * 1.0  # Center and scale y  
+                    z = landmark.z * 1.0 + 2.5    # Scale z to match training range
+                    landmarks.extend([x, y, z])
+                
+                skeleton_sequences.append(torch.tensor(landmarks, dtype=torch.float32))
+                frame_count += 1
         
         cap.release()
         
-        # Convert to tensor
+        if len(skeleton_sequences) == 0:
+            raise ValueError(f"No skeleton data extracted from video: {video_path}")
+        
         skeleton_data = torch.stack(skeleton_sequences)
-        print(f"Extracted skeleton data shape: {skeleton_data.shape}")
+        print(f"Extracted {frame_count} frames with skeleton data")
+        print(f"Skeleton data shape: {skeleton_data.shape}")
         
         return skeleton_data
 
 class GestureClassifier:
     """Classify gestures using trained CLIP model"""
     
-    def __init__(self, model_path: str, scaler_path: str, info_path: str):
+    def __init__(self, model_path: str):
         """Load trained model and preprocessing"""
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {self.device}")
         
-        # Load model info
-        with open(info_path, 'r') as f:
-            self.model_info = json.load(f)
+        # Load checkpoint
+        checkpoint = torch.load(model_path, map_location=self.device)
         
-        self.gesture_names = self.model_info['gesture_names']
-        self.gesture_descriptions = self.model_info['gesture_descriptions']
-        self.sequence_length = self.model_info['sequence_length']
+        self.gesture_names = checkpoint['gesture_names']
+        self.gesture_descriptions = checkpoint['gesture_descriptions']
+        self.sequence_length = checkpoint.get('sequence_length', 50)
+        # Move scaler params to device
+        scaler_params = checkpoint['scaler_params']
+        self.scaler_params = {
+            'mean': scaler_params['mean'].to(self.device),
+            'std': scaler_params['std'].to(self.device)
+        }
         
-        # Load scaler
-        self.scaler = joblib.load(scaler_path)
-        
-        # Load model (you'll need to import your model class)
-        # For now, we'll create a placeholder
-        self.model = self._load_model(model_path)
+        # Load model
+        model_arch = checkpoint.get('architecture', 'medium')
+        self.model = get_model(
+            model_arch,
+            input_size=75,
+            num_classes=len(self.gesture_names),
+            device=str(self.device)
+        )
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model = self.model.to(self.device)
         self.model.eval()
         
-        print(f"Loaded model for {len(self.gesture_names)} gestures")
-        print(f"Gesture names: {list(self.gesture_names.values())}")
-    
-    def _load_model(self, model_path: str):
-        """Load the trained model"""
-        # This needs to be implemented based on your model architecture
-        # For now, return a placeholder
-        print(f"Loading model from {model_path}")
-        # model = YourModelClass()
-        # model.load_state_dict(torch.load(model_path, map_location=self.device))
-        # return model.to(self.device)
-        return None  # Placeholder
+        print(f"Loaded model architecture: {model_arch}")
+        print(f"Number of gestures: {len(self.gesture_names)}")
+        print(f"Gesture names: {self.gesture_names}")
     
     def preprocess_skeleton_data(self, skeleton_data: torch.Tensor) -> torch.Tensor:
         """Preprocess skeleton data for model input"""
-        # Normalize skeleton data
-        skeleton_normalized = self.scaler.transform(skeleton_data.numpy())
-        
-        # Create sequences of specified length
+        # Create sequences of specified length first
         sequences = []
-        for i in range(len(skeleton_normalized) - self.sequence_length + 1):
-            sequence = skeleton_normalized[i:i + self.sequence_length]
+        for i in range(skeleton_data.size(0) - self.sequence_length + 1):
+            sequence = skeleton_data[i:i + self.sequence_length]
             sequences.append(sequence)
         
         if len(sequences) == 0:
             # Pad if video is too short
-            sequence = torch.tile(torch.tensor(skeleton_normalized), (self.sequence_length, 1))
-            sequences = [sequence.numpy()]
+            if skeleton_data.size(0) < self.sequence_length:
+                # Repeat frames to reach sequence length
+                repeats = (self.sequence_length // skeleton_data.size(0)) + 1
+                sequence = skeleton_data.repeat(repeats, 1)[:self.sequence_length]
+            else:
+                sequence = skeleton_data[:self.sequence_length]
+            sequences = [sequence]
         
-        # Convert to tensor
-        sequences_tensor = torch.tensor(sequences, dtype=torch.float32).to(self.device)
+        # Stack and flatten sequences
+        sequences_tensor = torch.stack(sequences)  # [num_seq, seq_len, 75]
+        batch_size = sequences_tensor.size(0)
+        flattened = sequences_tensor.view(batch_size, -1).to(self.device)  # [num_seq, seq_len * 75]
         
-        return sequences_tensor
+        # Normalize flattened sequences
+        normalized = tensor_scaler_transform(flattened, self.scaler_params)
+        
+        # Reshape back to [batch, seq_len, features]
+        sequences_normalized = normalized.view(batch_size, self.sequence_length, -1).to(self.device)
+        
+        return sequences_normalized
     
     def classify_gesture(self, skeleton_data: torch.Tensor) -> Tuple[str, str, float]:
         """Classify gesture from skeleton data"""
@@ -165,89 +152,25 @@ class GestureClassifier:
         sequences = self.preprocess_skeleton_data(skeleton_data)
         
         # Get predictions for all sequences
-        predictions = []
         with torch.no_grad():
-            for sequence in sequences:
-                # Add batch dimension
-                sequence = sequence.unsqueeze(0)
-                
-                # Get model prediction (placeholder)
-                # output = self.model(sequence)
-                # prediction = torch.softmax(output, dim=1)
-                # predictions.append(prediction.cpu().numpy())
-                
-                # Placeholder prediction
-                predictions.append(torch.rand(1, len(self.gesture_names)))
+            outputs = self.model(sequences)
+            probs = torch.softmax(outputs, dim=1)
+            
+            # Average predictions across all sequences
+            avg_probs = probs.mean(dim=0)
+            pred_idx = avg_probs.argmax().item()
+            confidence = avg_probs[pred_idx].item()
         
-        # Average predictions across all sequences
-        avg_prediction = torch.mean(torch.stack(predictions), dim=0)
-        predicted_class = torch.argmax(avg_prediction).item()
-        confidence = float(avg_prediction[0, predicted_class])
+        gesture_name = self.gesture_names[pred_idx] if pred_idx < len(self.gesture_names) else f"Unknown ({pred_idx})"
+        gesture_desc = self.gesture_descriptions[pred_idx] if pred_idx < len(self.gesture_descriptions) else "No description"
         
-        # Get gesture name and description
-        gesture_name = self.gesture_names[str(predicted_class)]
-        gesture_description = self.gesture_descriptions[str(predicted_class)]
-        
-        return gesture_name, gesture_description, confidence
-
-def visualize_skeleton_on_video(video_path: str, output_path: str, gesture_name: str, confidence: float):
-    """Create output video with skeleton overlay and gesture label"""
-    cap = cv2.VideoCapture(video_path)
-    
-    # Get video properties
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # Setup video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
-    # Initialize MediaPipe
-    mp_pose = mp.solutions.pose
-    pose = mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=2,
-        enable_segmentation=False,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    )
-    
-    frame_count = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        # Draw skeleton
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = pose.process(rgb_frame)
-        
-        if results.pose_landmarks:
-            # Draw pose landmarks
-            mp.solutions.drawing_utils.draw_landmarks(
-                frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-        
-        # Add gesture label
-        label = f"Gesture: {gesture_name} ({confidence:.2f})"
-        cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        
-        out.write(frame)
-        frame_count += 1
-    
-    cap.release()
-    out.release()
-    print(f"Output video saved: {output_path}")
+        return gesture_name, gesture_desc, confidence
 
 def main():
-    parser = argparse.ArgumentParser(description='Video to Gesture Classification')
-    parser.add_argument('--video', type=str, required=True, help='Input video path')
-    parser.add_argument('--model', type=str, default='clip_gesture_model.pth', help='Model path')
-    parser.add_argument('--scaler', type=str, default='clip_gesture_scaler.pkl', help='Scaler path')
-    parser.add_argument('--info', type=str, default='clip_gesture_info.json', help='Model info path')
-    parser.add_argument('--output', type=str, default='output_video.mp4', help='Output video path')
-    parser.add_argument('--visualize', action='store_true', help='Create output video with skeleton')
-    
+    parser = argparse.ArgumentParser(description='Classify gestures from video')
+    parser.add_argument('--video', required=True, help='Path to input video')
+    parser.add_argument('--model', required=True, help='Path to trained model (.pth)')
+    parser.add_argument('--output', help='Path to save results (optional)')
     args = parser.parse_args()
     
     print("=== Video to Gesture Classification ===")
@@ -261,31 +184,35 @@ def main():
         print(f"Error: Model file not found: {args.model}")
         return
     
-    # Initialize components
-    print("\n=== Initializing Components ===")
+    # Extract skeleton data from video
+    print(f"\n=== Extracting Skeleton Data ===")
+    print(f"Video: {args.video}")
     skeleton_extractor = VideoToSkeleton()
-    classifier = GestureClassifier(args.model, args.scaler, args.info)
-    
-    # Process video
-    print("\n=== Processing Video ===")
     skeleton_data = skeleton_extractor.process_video(args.video)
     
     # Classify gesture
-    print("\n=== Classifying Gesture ===")
-    gesture_name, gesture_description, confidence = classifier.classify_gesture(skeleton_data)
+    print(f"\n=== Classifying Gesture ===")
+    print(f"Model: {args.model}")
+    classifier = GestureClassifier(args.model)
+    gesture_name, gesture_desc, confidence = classifier.classify_gesture(skeleton_data)
     
     # Print results
     print(f"\n=== Results ===")
-    print(f"Predicted Gesture: {gesture_name}")
-    print(f"Description: {gesture_description}")
-    print(f"Confidence: {confidence:.3f}")
+    print(f"Gesture: {gesture_name}")
+    print(f"Description: {gesture_desc}")
+    print(f"Confidence: {confidence:.2%}")
     
-    # Create output video if requested
-    if args.visualize:
-        print(f"\n=== Creating Output Video ===")
-        visualize_skeleton_on_video(args.video, args.output, gesture_name, confidence)
-    
-    print("\n=== Classification Complete ===")
+    # Save results if requested
+    if args.output:
+        results = {
+            'video': args.video,
+            'gesture_name': gesture_name,
+            'gesture_description': gesture_desc,
+            'confidence': float(confidence)
+        }
+        with open(args.output, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"\nResults saved to: {args.output}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

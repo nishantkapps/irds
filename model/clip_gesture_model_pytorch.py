@@ -390,10 +390,19 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     test_accuracy = 100 * test_correct / test_total
     logger.info(f"Final test accuracy: {test_accuracy:.2f}%")
     
-    # Save model
-    torch.save(model.state_dict(), 'outputs/clip_gesture_model_pytorch.pth')
+    # Save complete checkpoint for inference
+    checkpoint = {
+        'model_state_dict': model.state_dict(),
+        'gesture_names': gesture_names,
+        'gesture_descriptions': gesture_descriptions,
+        'sequence_length': sequence_length,
+        'scaler_params': scaler_params,
+        'architecture': model_architecture,
+        'test_accuracy': test_accuracy
+    }
+    torch.save(checkpoint, 'outputs/clip_gesture_model_pytorch.pth')
     
-    # Save scaler info using tensor utils
+    # Also save legacy separate files for backward compatibility
     scaler_info = {
         'mean': scaler_params['mean'].tolist(),
         'std': scaler_params['std'].tolist()
@@ -401,7 +410,6 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     with open('outputs/clip_gesture_scaler_pytorch.json', 'w') as f:
         json.dump(scaler_info, f)
     
-    # Save gesture info
     gesture_info = {
         'gesture_names': gesture_names,
         'gesture_descriptions': gesture_descriptions,
