@@ -50,10 +50,40 @@ echo "Benchmark Complete!"
 echo "========================================="
 
 # Find latest benchmark files
-TRAINING_BENCHMARK=$(ls -t outputs/benchmark_${GPU_TYPE}_*.json | head -1)
+TRAINING_BENCHMARK=$(ls -t outputs/benchmark_${GPU_TYPE}_*.json 2>/dev/null | head -1)
+TRAINING_TXT=$(ls -t outputs/benchmark_report_${GPU_TYPE}_*.txt 2>/dev/null | head -1)
+INFERENCE_TXT=$(ls -t outputs/benchmark_report_${GPU_TYPE}_*.txt 2>/dev/null | tail -1)
+
+echo ""
+echo "========================================="
+echo "Step 3: Creating Combined Report"
+echo "========================================="
+
+# Create combined report
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+COMBINED_REPORT="outputs/benchmark_combined_${GPU_TYPE}_${TIMESTAMP}.txt"
+
+if [ -f "$TRAINING_TXT" ]; then
+    # Copy training report
+    cat "$TRAINING_TXT" > "$COMBINED_REPORT"
+    
+    # If inference benchmark was run separately, append it
+    if [ -f "$INFERENCE_TXT" ] && [ "$TRAINING_TXT" != "$INFERENCE_TXT" ]; then
+        echo "" >> "$COMBINED_REPORT"
+        echo "=========================================" >> "$COMBINED_REPORT"
+        echo "INFERENCE BENCHMARK (SEPARATE RUN)" >> "$COMBINED_REPORT"
+        echo "=========================================" >> "$COMBINED_REPORT"
+        grep -A 100 "INFERENCE PERFORMANCE" "$INFERENCE_TXT" >> "$COMBINED_REPORT" 2>/dev/null || true
+    fi
+    
+    echo "Combined report created: $COMBINED_REPORT"
+fi
+
 echo ""
 echo "Benchmark files created:"
-echo "  Training: $TRAINING_BENCHMARK"
+echo "  Training JSON: $TRAINING_BENCHMARK"
+echo "  Training TXT: $TRAINING_TXT"
+echo "  Combined Report: $COMBINED_REPORT"
 echo ""
 echo "To compare with another GPU:"
 echo "  1. Copy benchmark files from this system"
