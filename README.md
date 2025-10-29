@@ -28,6 +28,10 @@ All documentation is located in the [`readme/`](readme/) folder:
 ### Inference & Testing
 - **[VIDEO_PIPELINE_GUIDE.md](readme/VIDEO_PIPELINE_GUIDE.md)** - Video-to-gesture inference guide
 
+### Benchmarking
+- **[BENCHMARKING_GUIDE.md](readme/BENCHMARKING_GUIDE.md)** - Complete GPU benchmarking guide (AMD vs NVIDIA)
+- **[BENCHMARK_SUMMARY.md](readme/BENCHMARK_SUMMARY.md)** - Quick reference for benchmarking
+
 ### HPC Deployment
 - **[HPC_FILE_LIST.md](readme/HPC_FILE_LIST.md)** - Files needed for HPC deployment
 
@@ -91,6 +95,15 @@ python compare_experiments.py
 ```bash
 cd model/train
 python train_pytorch_multi_gpu.py --config ../../config/experiment_medium.yaml --gpu 1
+```
+
+### Benchmark Performance
+```bash
+# Run complete benchmark (training + inference)
+bash scripts/run_full_benchmark.sh
+
+# Compare AMD vs NVIDIA
+python scripts/compare_gpu_benchmarks.py outputs/benchmark_amd_*.json outputs/benchmark_nvidia_*.json
 ```
 
 ## 🖥️ HPC Deployment

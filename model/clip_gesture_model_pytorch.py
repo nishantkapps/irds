@@ -4,7 +4,7 @@ CLIP-style Gesture Recognition Model - PyTorch Only Version
 Replaces NumPy operations with PyTorch to avoid GPU conflicts
 """
 
-import os, sys, glob, json
+import os, sys, glob, json, time
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,6 +20,7 @@ sys.path.insert(0, str(path_to_irds))
 # Add project root to path for imports
 from tensor_utils import tensor_train_test_split, tensor_scaler_fit_transform
 from utils import get_data_path, get_logger
+from utils.benchmark import GPUBenchmark
 from model.model_architectures import get_model, count_parameters, MODEL_INFO
 
 # PyTorch-only data loading functions
@@ -243,7 +244,8 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
                                    gesture_descriptions: List[str], sequence_length: int = 10,
                                    batch_size: int = 32, num_epochs: int = 50,
                                    learning_rate: float = 0.001, test_size: float = 0.2,
-                                   device: str = 'cpu', model_architecture: str = 'medium'):
+                                   device: str = 'cpu', model_architecture: str = 'medium',
+                                   benchmark: GPUBenchmark = None):
     """
     Train the CLIP-style gesture recognition model using PyTorch only
     """
@@ -251,6 +253,10 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     logger.info("=== ENTERING train_clip_gesture_model_pytorch ===")
     logger.info(f"Parameters: X.shape={X.shape}, y.shape={y.shape}, device={device}")
     logger.info(f"Training params: batch_size={batch_size}, epochs={num_epochs}, lr={learning_rate}")
+    
+    # Start timing for data preparation
+    if benchmark:
+        benchmark.start_timer('data_preparation')
     
     logger.info("Preparing CLIP gesture data...")
     
@@ -276,6 +282,17 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     logger.info(f"Training data: {X_train.shape}, {y_train.shape}")
     logger.info(f"Test data: {X_test.shape}, {y_test.shape}")
     
+    # Record data metrics
+    if benchmark:
+        benchmark.record_data_metrics(
+            train_samples=len(X_train),
+            test_samples=len(X_test),
+            num_classes=len(gesture_names),
+            sequence_length=sequence_length
+        )
+        benchmark.stop_timer('data_preparation')
+        benchmark.start_timer('gpu_transfer')
+    
     # Move to device - force GPU usage
     logger.debug(f"Moving data to device: {device}")
     logger.debug(f"Initial tensor device: {X_train.device}")
@@ -294,6 +311,11 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     logger.info(f"Data moved to device: {device}")
     logger.debug(f"X_train device: {X_train.device}")
     logger.debug(f"y_train device: {y_train.device}")
+    
+    if benchmark:
+        benchmark.stop_timer('gpu_transfer')
+        benchmark.record_memory('after_data_transfer', device)
+        benchmark.start_timer('model_creation')
     
     # Create data loaders
     logger.info("Creating data loaders...")
@@ -325,6 +347,11 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     logger.info(f"Model device: {next(model.parameters()).device}")
     logger.info(f"Actual model parameters: {param_count:,}")
     
+    if benchmark:
+        benchmark.record_model_metrics(model_architecture, param_count)
+        benchmark.stop_timer('model_creation')
+        benchmark.record_memory('after_model_creation', device)
+    
     # Test model with a small batch
     test_input = torch.randn(2, 10, 75).to(device)
     test_output = model(test_input)
@@ -340,7 +367,13 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     train_losses = []
     train_accuracies = []
     
+    if benchmark:
+        benchmark.start_timer('total_training')
+    
+    epoch_start_time = time.time()
+    
     for epoch in range(num_epochs):
+        epoch_iter_start = time.time()
         model.train()
         total_loss = 0
         correct = 0
@@ -372,8 +405,14 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
         train_losses.append(avg_loss)
         train_accuracies.append(accuracy)
         
+        # Record epoch metrics
+        if benchmark:
+            benchmark.record_training_metrics(epoch, avg_loss, accuracy, learning_rate)
+        
+        epoch_time = time.time() - epoch_iter_start
+        
         if epoch % 2 == 0:
-            logger.info(f"Epoch {epoch}/{num_epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%")
+            logger.info(f"Epoch {epoch}/{num_epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%, Time: {epoch_time:.2f}s")
     
     # Test the model
     model.eval()
@@ -389,6 +428,17 @@ def train_clip_gesture_model_pytorch(X: torch.Tensor, y: torch.Tensor, gesture_n
     
     test_accuracy = 100 * test_correct / test_total
     logger.info(f"Final test accuracy: {test_accuracy:.2f}%")
+    
+    if benchmark:
+        benchmark.stop_timer('total_training')
+        benchmark.record_test_metrics(test_accuracy)
+        benchmark.record_memory('after_training', device)
+        
+        # Calculate throughput
+        total_train_time = time.time() - epoch_start_time
+        total_samples = len(X_train) * num_epochs
+        samples_per_sec = total_samples / total_train_time
+        benchmark.record_throughput(samples_per_sec, 'training')
     
     # Save complete checkpoint for inference
     checkpoint = {

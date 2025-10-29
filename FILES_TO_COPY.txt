@@ -1,0 +1,57 @@
+Files to Copy to HPC for Benchmarking
+======================================
+
+NEW FILES (must copy):
+---------------------
+utils/benchmark.py
+utils/__init__.py
+model/test/benchmark_inference.py
+scripts/compare_gpu_benchmarks.py
+scripts/run_full_benchmark.sh
+readme/BENCHMARKING_GUIDE.md
+readme/BENCHMARK_SUMMARY.md
+BENCHMARKING_SETUP.md
+
+MODIFIED FILES (must update):
+-----------------------------
+model/clip_gesture_model_pytorch.py
+model/train/train_pytorch_only.py
+README.md
+
+QUICK COPY COMMAND:
+------------------
+rsync -avz --progress \
+    utils/benchmark.py \
+    utils/__init__.py \
+    model/test/benchmark_inference.py \
+    model/clip_gesture_model_pytorch.py \
+    model/train/train_pytorch_only.py \
+    scripts/compare_gpu_benchmarks.py \
+    scripts/run_full_benchmark.sh \
+    readme/BENCHMARKING_GUIDE.md \
+    readme/BENCHMARK_SUMMARY.md \
+    BENCHMARKING_SETUP.md \
+    README.md \
+    user@hpc:/home/rocm_2/irds/
+
+OR COPY ENTIRE PROJECT:
+-----------------------
+rsync -avz --exclude='__pycache__' --exclude='*.pyc' --exclude='.git' \
+    /home/nishant/project/irds/ user@hpc:/home/rocm_2/irds/
+
+QUICK START ON HPC:
+------------------
+cd /home/rocm_2/irds
+bash scripts/run_full_benchmark.sh
+
+QUICK START ON NVIDIA:
+---------------------
+cd /path/to/irds
+bash scripts/run_full_benchmark.sh
+
+COMPARE RESULTS:
+---------------
+python scripts/compare_gpu_benchmarks.py \
+    outputs/benchmark_amd_*.json \
+    outputs/benchmark_nvidia_*.json
+
