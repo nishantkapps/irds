@@ -118,8 +118,11 @@ def get_project_root() -> Path:
     # Look for the 'data' directory going up the directory tree
     for parent in [current_dir] + list(current_dir.parents):
         data_dir = parent / 'data'
-        if data_dir.exists() and (data_dir / 'labels.csv').exists():
-            return parent
+        if data_dir.exists():
+            # Check if it has .txt files (skeleton data) or labels.csv
+            txt_files = list(data_dir.glob('*.txt'))
+            if txt_files or (data_dir / 'labels.csv').exists():
+                return parent
     
     # Fallback: assume we're in the project root
     return current_dir

@@ -127,7 +127,7 @@ def prepare_clip_gesture_data_pytorch(folder_path: str = "../../data",
     import time
     start_time = time.time()
     logger.info("Loading IRDS data for CLIP model...")
-    logger.debug(f"Loading from folder: {folder_path}, max_files: {max_files}")
+    logger.info(f"Loading from folder: {folder_path}, max_files: {max_files}")
     
     df = load_irds_data(folder_path=folder_path, max_files=max_files)
     logger.info(f"Initial data loaded: {len(df)} rows")
