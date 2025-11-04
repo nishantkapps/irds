@@ -1,0 +1,44 @@
+# IRDS 3D Visualization Configuration
+# This config is for running visualization scripts
+
+# Data loading settings
+data:
+  folder_path: null  # Will auto-detect project data directory
+  file_pattern: "*.txt"
+  has_header: false
+  add_metadata: true
+  columns: null
+  labels_path: null  # Will auto-detect labels.csv in data directory
+  max_files: 10  # Limit files for faster loading
+
+# Visualization settings
+visualization:
+  x_cols: null
+  frame_col: null
+  max_rows: 500
+  interval_ms: 100
+  point_size: 20
+  elev: 20
+  azim: -60
+  save_path: "outputs/visualization_output.gif"  # Save animation to outputs
+  dpi: 100
+  show: true  # Show visualization window
+
+# Skeleton settings
+skeleton:
+  enabled: true
+  num_joints: 25
+  start_col: 0
+  order: "xyz"
+  connect: true
+
+# Filter settings - set these to filter specific data
+filters:
+  source_file: null  # e.g., "101_18_0_1_1_stand.txt"
+  subject_id: null   # e.g., 101
+  date_id: null      # e.g., 18
+  gesture_label: null  # e.g., 0
+  rep_number: null   # e.g., 1
+  correct_label: null  # e.g., 1
+  position: null     # e.g., "stand"
+
